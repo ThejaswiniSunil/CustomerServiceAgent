@@ -1,14 +1,67 @@
-# MCP (Model Context Protocol) tools package for ResolveX
-from mcp.calendar_tool import add_followup_reminder, list_upcoming_reminders
-from mcp.notes_tool import save_note, get_notes_for_product
-from mcp.task_tool import create_task, complete_task, list_open_tasks
+"""
+ResolveX MCP tools package.
+
+This package contains internal operational tools used by the multi-agent system:
+- task management
+- notes / audit trail
+- calendar / deadline tracking
+"""
+
+from .task_tool import (
+    create_task,
+    update_task_status,
+    add_task_note,
+    get_task,
+    get_tasks,
+    get_open_task_summary,
+)
+
+from .notes_tool import (
+    create_note,
+    append_note,
+    update_note,
+    get_note,
+    get_notes_by_entity,
+    get_recent_notes,
+    get_notes_summary,
+)
+
+from .calendar_tool import (
+    create_event,
+    complete_event,
+    reschedule_event,
+    get_event,
+    get_upcoming_events,
+    get_overdue_events,
+    get_events_by_entity,
+    get_calendar_summary,
+)
 
 __all__ = [
-    "add_followup_reminder",
-    "list_upcoming_reminders",
-    "save_note",
-    "get_notes_for_product",
+    # task tool
     "create_task",
-    "complete_task",
-    "list_open_tasks",
+    "update_task_status",
+    "add_task_note",
+    "get_task",
+    "get_tasks",
+    "get_open_task_summary",
+
+    # notes tool
+    "create_note",
+    "append_note",
+    "update_note",
+    "get_note",
+    "get_notes_by_entity",
+    "get_recent_notes",
+    "get_notes_summary",
+
+    # calendar tool
+    "create_event",
+    "complete_event",
+    "reschedule_event",
+    "get_event",
+    "get_upcoming_events",
+    "get_overdue_events",
+    "get_events_by_entity",
+    "get_calendar_summary",
 ]
