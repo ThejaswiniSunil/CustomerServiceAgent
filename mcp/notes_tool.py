@@ -1,133 +1,206 @@
-"""
-mcp/notes_tool.py
-──────────────────
-Internal notes MCP tool for ResolveX.
-
-Allows agents to persist structured notes about products, complaints,
-and resolutions. Used by the learning_agent to store improvement
-insights for future reference.
-"""
-
 import os
+import uuid
 from datetime import datetime, timezone
-from google.cloud import firestore
+from typing import Any, Dict, List, Optional
+
 from dotenv import load_dotenv
+from google.cloud import firestore
 
 load_dotenv()
 
-db = firestore.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT"))
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+db = firestore.Client(project=PROJECT_ID)
 
 
-def save_note(
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _serialize(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _serialize(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_serialize(v) for v in value]
+    return value
+
+
+def create_note(
+    *,
     title: str,
-    content: str,
-    product_name: str = None,
-    note_type: str = "general",
-    tags: list = None,
-) -> dict:
+    note_type: str,
+    related_entity: str,
+    related_id: str,
+    body: str,
+    author: str = "ResolveX System",
+    tags: Optional[List[str]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
-    Saves a structured note to Firestore.
-
-    Args:
-        title: Short title for the note.
-        content: Full note body (can be AI-generated insights).
-        product_name: Optional — links the note to a specific product.
-        note_type: One of 'general' | 'insight' | 'learning' | 'alert'.
-        tags: Optional list of string tags for filtering.
-
-    Returns:
-        dict with note_id and status.
+    Creates a structured note in Firestore.
     """
+    note_id = str(uuid.uuid4())
+    now = _utc_now()
 
-    note_id = f"note_{int(datetime.now(timezone.utc).timestamp() * 1000)}"
-    now = datetime.now(timezone.utc)
-
-    note = {
+    record = {
         "note_id": note_id,
         "title": title,
-        "content": content,
-        "product_name": product_name,
-        "note_type": note_type,
+        "note_type": note_type,            # complaint_log / analyst_note / decision_note / manufacturer_note / tracker_note / dashboard_note
+        "related_entity": related_entity,  # complaint / product / manufacturer / task
+        "related_id": related_id,
+        "body": body,
+        "author": author,
         "tags": tags or [],
+        "metadata": metadata or {},
         "created_at": now,
         "updated_at": now,
     }
 
-    db.collection("notes").document(note_id).set(note)
+    db.collection("notes").document(note_id).set(record)
 
     return {
-        "status": "note_saved",
-        "note_id": note_id,
-        "title": title,
-        "note_type": note_type,
+        "status": "created",
+        "note": _serialize(record),
     }
 
 
-def get_notes_for_product(product_name: str, note_type: str = None) -> list:
+def append_note(
+    *,
+    related_entity: str,
+    related_id: str,
+    body: str,
+    note_type: str = "activity_note",
+    author: str = "ResolveX System",
+    tags: Optional[List[str]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
-    Retrieves all notes linked to a specific product.
-
-    Args:
-        product_name: The product to filter notes by.
-        note_type: Optional filter by note type.
-
-    Returns:
-        List of note dicts ordered by newest first.
+    Convenience method for adding short timeline-style notes.
     """
+    preview = body[:60].strip()
+    if len(body) > 60:
+        preview += "..."
 
-    query = (
-        db.collection("notes")
-        .where("product_name", "==", product_name)
+    return create_note(
+        title=preview or "Activity note",
+        note_type=note_type,
+        related_entity=related_entity,
+        related_id=related_id,
+        body=body,
+        author=author,
+        tags=tags,
+        metadata=metadata,
     )
 
-    if note_type:
-        query = query.where("note_type", "==", note_type)
 
-    docs = query.order_by(
-        "created_at", direction=firestore.Query.DESCENDING
-    ).stream()
-
-    return [doc.to_dict() for doc in docs]
-
-
-def get_notes_by_type(note_type: str, limit: int = 20) -> list:
+def update_note(note_id: str, body: str, tags: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Retrieves notes filtered by type. Useful for the learning_agent
-    to pull all 'learning' or 'insight' notes.
-
-    Args:
-        note_type: e.g. 'learning' | 'insight' | 'alert'
-        limit: Max number of results to return.
-
-    Returns:
-        List of note dicts ordered by newest first.
+    Updates an existing note.
     """
+    note_ref = db.collection("notes").document(note_id)
+    note_doc = note_ref.get()
 
+    if not note_doc.exists:
+        return {
+            "status": "not_found",
+            "note_id": note_id,
+            "message": "Note not found.",
+        }
+
+    payload = {
+        "body": body,
+        "updated_at": _utc_now(),
+    }
+
+    if tags is not None:
+        payload["tags"] = tags
+
+    note_ref.update(payload)
+
+    updated = note_ref.get().to_dict()
+
+    return {
+        "status": "updated",
+        "note": _serialize(updated),
+    }
+
+
+def get_note(note_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Returns one note by ID.
+    """
+    doc = db.collection("notes").document(note_id).get()
+    if not doc.exists:
+        return None
+    return _serialize(doc.to_dict())
+
+
+def get_notes_by_entity(
+    related_entity: str,
+    related_id: str,
+    limit: int = 100,
+) -> List[Dict[str, Any]]:
+    """
+    Returns notes for a given entity.
+    """
     docs = (
         db.collection("notes")
-        .where("note_type", "==", note_type)
+        .where("related_entity", "==", related_entity)
+        .where("related_id", "==", related_id)
         .order_by("created_at", direction=firestore.Query.DESCENDING)
         .limit(limit)
         .stream()
     )
 
-    return [doc.to_dict() for doc in docs]
+    return [_serialize(doc.to_dict()) for doc in docs]
 
 
-def delete_note(note_id: str) -> dict:
+def get_recent_notes(limit: int = 100) -> List[Dict[str, Any]]:
     """
-    Deletes a note by its ID.
-
-    Args:
-        note_id: The Firestore document ID of the note.
-
-    Returns:
-        dict with status confirmation.
+    Returns recent notes for activity feeds / dashboards.
     """
+    docs = (
+        db.collection("notes")
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .limit(limit)
+        .stream()
+    )
 
-    db.collection("notes").document(note_id).delete()
+    return [_serialize(doc.to_dict()) for doc in docs]
 
-    return {
-        "status": "note_deleted",
-        "note_id": note_id,
+
+def get_notes_summary(limit: int = 200) -> Dict[str, Any]:
+    """
+    Returns counts by note type for dashboard overview.
+    """
+    notes = get_recent_notes(limit=limit)
+
+    summary: Dict[str, int] = {
+        "total_notes": len(notes),
     }
+
+    for note in notes:
+        note_type = note.get("note_type", "unknown")
+        summary[note_type] = summary.get(note_type, 0) + 1
+
+    return summary
+
+
+if __name__ == "__main__":
+    result = create_note(
+        title="Initial complaint logged",
+        note_type="complaint_log",
+        related_entity="complaint",
+        related_id="demo-complaint-001",
+        body="Customer reported that the Voltix Charger overheats after 5 minutes of use.",
+        author="ResolveX Listener Agent",
+        tags=["complaint", "defect", "high_priority"],
+        metadata={
+            "product_name": "Voltix Charger",
+            "issue_type": "defect",
+        },
+    )
+
+    print("Created Note:")
+    print(result)
