@@ -1,180 +1,254 @@
-"""
-mcp/task_tool.py
-─────────────────
-Task management MCP tool for ResolveX.
-
-Allows agents to create, complete, and list operational tasks.
-Used by the decision_agent (escalations), tracker_agent (follow-ups),
-and manufacturer_agent (manufacturer actions).
-"""
-
 import os
-from datetime import datetime, timezone
-from google.cloud import firestore
+import uuid
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Optional
+
 from dotenv import load_dotenv
+from google.cloud import firestore
 
 load_dotenv()
 
-db = firestore.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT"))
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+db = firestore.Client(project=PROJECT_ID)
 
-# Task priority levels
-PRIORITY_LOW = "low"
-PRIORITY_MEDIUM = "medium"
-PRIORITY_HIGH = "high"
-PRIORITY_CRITICAL = "critical"
 
-# Task status values
-STATUS_OPEN = "open"
-STATUS_IN_PROGRESS = "in_progress"
-STATUS_DONE = "done"
-STATUS_CANCELLED = "cancelled"
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _serialize(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _serialize(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_serialize(v) for v in value]
+    return value
+
+
+def _build_due_date(priority: str) -> datetime:
+    """
+    Creates a due date based on priority.
+    """
+    now = _utc_now()
+
+    priority = (priority or "medium").lower()
+
+    if priority == "urgent":
+        return now + timedelta(hours=12)
+    if priority == "high":
+        return now + timedelta(days=1)
+    if priority == "medium":
+        return now + timedelta(days=3)
+    return now + timedelta(days=5)
 
 
 def create_task(
+    *,
     title: str,
-    description: str,
-    assigned_to: str = "system",
-    priority: str = PRIORITY_MEDIUM,
-    product_name: str = None,
-    complaint_id: str = None,
-    due_in_days: int = None,
-) -> dict:
+    task_type: str,
+    related_entity: str,
+    related_id: str,
+    priority: str = "medium",
+    description: str = "",
+    assigned_to: str = "ResolveX Ops",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
-    Creates a new task in Firestore.
-
-    Args:
-        title: Short task title.
-        description: Full task details.
-        assigned_to: Agent or team responsible (e.g. 'tracker_agent', 'support_team').
-        priority: 'low' | 'medium' | 'high' | 'critical'
-        product_name: Optional — links task to a product.
-        complaint_id: Optional — links task to a specific complaint.
-        due_in_days: Optional — number of days until due date.
-
-    Returns:
-        dict with task_id and status.
+    Creates a task record in Firestore.
     """
+    task_id = str(uuid.uuid4())
+    now = _utc_now()
+    due_at = _build_due_date(priority)
 
-    from datetime import timedelta
-
-    task_id = f"task_{int(datetime.now(timezone.utc).timestamp() * 1000)}"
-    now = datetime.now(timezone.utc)
-
-    due_at = None
-    if due_in_days is not None:
-        due_at = now + timedelta(days=due_in_days)
-
-    task = {
+    record = {
         "task_id": task_id,
         "title": title,
+        "task_type": task_type,
         "description": description,
-        "assigned_to": assigned_to,
+        "related_entity": related_entity,      # complaint / manufacturer / product
+        "related_id": related_id,
         "priority": priority,
-        "status": STATUS_OPEN,
-        "product_name": product_name,
-        "complaint_id": complaint_id,
-        "due_at": due_at,
-        "completed_at": None,
+        "status": "open",                      # open / in_progress / blocked / completed / cancelled
+        "assigned_to": assigned_to,
+        "metadata": metadata or {},
         "created_at": now,
         "updated_at": now,
+        "due_at": due_at,
+        "completed_at": None,
     }
 
-    db.collection("tasks").document(task_id).set(task)
+    db.collection("tasks").document(task_id).set(record)
 
     return {
-        "status": "task_created",
-        "task_id": task_id,
-        "title": title,
-        "priority": priority,
-        "assigned_to": assigned_to,
-        "due_at": due_at.isoformat() if due_at else None,
+        "status": "created",
+        "task": _serialize(record),
     }
 
 
-def complete_task(task_id: str, resolution_note: str = "") -> dict:
-    """
-    Marks a task as completed.
-
-    Args:
-        task_id: The Firestore document ID of the task.
-        resolution_note: Optional note describing how the task was resolved.
-
-    Returns:
-        dict with status confirmation.
-    """
-
-    now = datetime.now(timezone.utc)
-
-    db.collection("tasks").document(task_id).update({
-        "status": STATUS_DONE,
-        "completed_at": now,
-        "resolution_note": resolution_note,
-        "updated_at": now,
-    })
-
-    return {
-        "status": "task_completed",
-        "task_id": task_id,
-        "completed_at": now.isoformat(),
-    }
-
-
-def list_open_tasks(
-    assigned_to: str = None,
-    priority: str = None,
-    product_name: str = None,
-    limit: int = 50,
-) -> list:
-    """
-    Returns open tasks, with optional filters.
-
-    Args:
-        assigned_to: Filter by agent/team name.
-        priority: Filter by priority level.
-        product_name: Filter by product.
-        limit: Max results to return.
-
-    Returns:
-        List of task dicts ordered by priority then created_at.
-    """
-
-    query = db.collection("tasks").where("status", "==", STATUS_OPEN)
-
-    if assigned_to:
-        query = query.where("assigned_to", "==", assigned_to)
-
-    if priority:
-        query = query.where("priority", "==", priority)
-
-    if product_name:
-        query = query.where("product_name", "==", product_name)
-
-    docs = query.order_by(
-        "created_at", direction=firestore.Query.DESCENDING
-    ).limit(limit).stream()
-
-    return [doc.to_dict() for doc in docs]
-
-
-def update_task_status(task_id: str, new_status: str) -> dict:
+def update_task_status(
+    task_id: str,
+    new_status: str,
+    note: str = "",
+) -> Dict[str, Any]:
     """
     Updates the status of a task.
-
-    Args:
-        task_id: The task to update.
-        new_status: 'open' | 'in_progress' | 'done' | 'cancelled'
-
-    Returns:
-        dict with status confirmation.
     """
+    task_ref = db.collection("tasks").document(task_id)
+    task_doc = task_ref.get()
 
-    db.collection("tasks").document(task_id).update({
+    if not task_doc.exists:
+        return {
+            "status": "not_found",
+            "task_id": task_id,
+            "message": "Task not found.",
+        }
+
+    allowed_statuses = {"open", "in_progress", "blocked", "completed", "cancelled"}
+    if new_status not in allowed_statuses:
+        return {
+            "status": "invalid_status",
+            "task_id": task_id,
+            "message": f"Invalid task status: {new_status}",
+        }
+
+    now = _utc_now()
+    update_payload = {
         "status": new_status,
-        "updated_at": datetime.now(timezone.utc),
-    })
+        "updated_at": now,
+    }
+
+    if note:
+        update_payload["latest_note"] = note
+
+    if new_status == "completed":
+        update_payload["completed_at"] = now
+
+    task_ref.update(update_payload)
+
+    updated_doc = task_ref.get().to_dict()
 
     return {
-        "status": "task_updated",
-        "task_id": task_id,
-        "new_status": new_status,
+        "status": "updated",
+        "task": _serialize(updated_doc),
     }
+
+
+def add_task_note(task_id: str, note: str) -> Dict[str, Any]:
+    """
+    Adds an operational note to a task.
+    """
+    task_ref = db.collection("tasks").document(task_id)
+    task_doc = task_ref.get()
+
+    if not task_doc.exists:
+        return {
+            "status": "not_found",
+            "task_id": task_id,
+            "message": "Task not found.",
+        }
+
+    current = task_doc.to_dict()
+    notes = current.get("notes", [])
+    notes.append({
+        "note": note,
+        "created_at": _utc_now(),
+    })
+
+    task_ref.update({
+        "notes": notes,
+        "latest_note": note,
+        "updated_at": _utc_now(),
+    })
+
+    updated_doc = task_ref.get().to_dict()
+
+    return {
+        "status": "note_added",
+        "task": _serialize(updated_doc),
+    }
+
+
+def get_task(task_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Returns one task by ID.
+    """
+    doc = db.collection("tasks").document(task_id).get()
+    if not doc.exists:
+        return None
+    return _serialize(doc.to_dict())
+
+
+def get_tasks(
+    status: Optional[str] = None,
+    related_entity: Optional[str] = None,
+    limit: int = 100,
+) -> List[Dict[str, Any]]:
+    """
+    Returns tasks with optional filtering.
+    """
+    query = db.collection("tasks")
+
+    if status:
+        query = query.where("status", "==", status)
+
+    if related_entity:
+        query = query.where("related_entity", "==", related_entity)
+
+    docs = (
+        query.order_by("created_at", direction=firestore.Query.DESCENDING)
+        .limit(limit)
+        .stream()
+    )
+
+    return [_serialize(doc.to_dict()) for doc in docs]
+
+
+def get_open_task_summary() -> Dict[str, Any]:
+    """
+    Returns a lightweight summary of task operations.
+    """
+    tasks = get_tasks(limit=200)
+
+    summary = {
+        "total_tasks": len(tasks),
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "completed": 0,
+        "cancelled": 0,
+        "urgent": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+    }
+
+    for task in tasks:
+        status = task.get("status", "open")
+        priority = task.get("priority", "medium")
+
+        if status in summary:
+            summary[status] += 1
+
+        if priority in summary:
+            summary[priority] += 1
+
+    return summary
+
+
+if __name__ == "__main__":
+    created = create_task(
+        title="Review recurring charger defect complaints",
+        task_type="manufacturer_followup",
+        related_entity="product",
+        related_id="Voltix Charger",
+        priority="high",
+        description="Investigate repeated defect complaints and prepare escalation workflow.",
+        metadata={
+            "complaint_count": 4,
+            "dominant_issue": "defect",
+        },
+    )
+
+    print("Created Task:")
+    print(created)
