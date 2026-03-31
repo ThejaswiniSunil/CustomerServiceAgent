@@ -13,7 +13,7 @@ vertexai.init(
     location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 )
 
-model = GenerativeModel("gemini-2.0-flash-001")
+model = GenerativeModel("gemini-2.5-flash")
 db = firestore.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT"))
 
 
@@ -21,18 +21,51 @@ def improve() -> dict:
     """
     Analyzes resolved complaints to find patterns in what
     led to the best outcomes. Updates system strategy.
+
+    IMPORTANT — Firestore index required:
+    This function uses .where("is_resolved", "==", True) combined with
+    .order_by("created_at", ...). Firestore requires a composite index for
+    queries that filter on one field and order by another.
+
+    Create it once via the GCP Console:
+      Firestore → Indexes → Composite → Add Index
+      Collection: complaints
+      Fields: is_resolved ASC, created_at DESC
+
+    Or via gcloud CLI:
+      gcloud firestore indexes composite create \
+        --collection-group=complaints \
+        --field-config=field-path=is_resolved,order=ascending \
+        --field-config=field-path=created_at,order=descending
+
+    Without this index the query will throw a FailedPrecondition error
+    and the learning agent will not run.
     """
 
-    # Step 1 — Fetch recent resolved complaints
-    complaints = (
-        db.collection("complaints")
-        .where("is_resolved", "==", True)
-        .order_by("created_at", direction=firestore.Query.DESCENDING)
-        .limit(50)
-        .stream()
-    )
-
-    complaint_list = [doc.to_dict() for doc in complaints]
+    # FIX: This query (where + order_by on different fields) requires a
+    # composite index in Firestore. See docstring above for how to create it.
+    try:
+        complaints = (
+            db.collection("complaints")
+            .where("is_resolved", "==", True)
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(50)
+            .stream()
+        )
+        complaint_list = [doc.to_dict() for doc in complaints]
+    except Exception as e:
+        # Catch missing-index errors gracefully so the pipeline doesn't crash
+        error_msg = str(e)
+        if "index" in error_msg.lower() or "failed_precondition" in error_msg.lower():
+            return {
+                "status": "index_missing",
+                "message": (
+                    "Firestore composite index missing. "
+                    "See learning_agent.py docstring for setup instructions."
+                ),
+                "error": error_msg
+            }
+        raise
 
     if len(complaint_list) < 5:
         return {

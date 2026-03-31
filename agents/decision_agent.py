@@ -13,7 +13,7 @@ vertexai.init(
     location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
 )
 
-model = GenerativeModel("gemini-2.0-flash-001")
+model = GenerativeModel("gemini-2.5-flash")
 
 
 ALLOWED_DECISIONS = {

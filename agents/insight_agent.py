@@ -15,7 +15,7 @@ PATTERN_THRESHOLD = int(os.getenv("PATTERN_THRESHOLD", "3"))
 
 vertexai.init(project=PROJECT_ID, location=LOCATION)
 
-model = GenerativeModel("gemini-2.0-flash-001")
+model = GenerativeModel("gemini-2.5-flash")
 db = firestore.Client(project=PROJECT_ID)
 
 
