@@ -18,6 +18,9 @@ from agents.manufacturer_agent import contact_manufacturer
 from agents.tracker_agent import track_and_followup
 from agents.learning_agent import improve
 
+# MCP tool — task management
+from mcp.task_tool import create_task
+
 load_dotenv()
 
 # Setup logging for Cloud Run
@@ -42,6 +45,9 @@ class ResolveXOrchestrator:
     Coordinates all agents to process a complaint end-to-end.
     Each step is independently protected — one agent failing
     never crashes the entire pipeline.
+
+    MCP tools connected:
+      - task_tool: creates a Firestore task when decision = escalate
     """
 
     def handle_complaint(self, complaint_text: str) -> Dict[str, Any]:
@@ -69,7 +75,6 @@ class ResolveXOrchestrator:
         except Exception as e:
             logger.error(f"[orchestrator] Listener Agent failed: {e}")
             result["steps"]["listener"] = {"status": "error", "error": str(e)}
-            # Cannot continue without extracted data
             result["customer_response"] = {
                 "acknowledgement": "We received your complaint and are reviewing it.",
                 "resolution": "Our team will be in touch shortly.",
@@ -125,6 +130,36 @@ class ResolveXOrchestrator:
         except Exception as e:
             logger.error(f"[orchestrator] Database Agent failed: {e}")
             result["steps"]["database"] = {"status": "error", "error": str(e)}
+
+        # ── MCP Step: Task Tool ──────────────────────────────
+        # If decision is escalate, create a task in Firestore via MCP task_tool
+        # so the support team has a structured action item to follow up on.
+        if decision.get("decision") == "escalate":
+            logger.info("[orchestrator] MCP task_tool: creating escalation task")
+            try:
+                task = create_task(
+                    title=f"Manual review required: {extracted_data.get('product_name', 'Unknown')}",
+                    description=(
+                        f"Complaint ID: {result.get('complaint_id')}\n"
+                        f"Issue: {extracted_data.get('complaint_summary', '')}\n"
+                        f"Reason: {decision.get('decision_reason', '')}"
+                    ),
+                    assigned_to="support_team",
+                    priority=decision.get("priority", "high"),
+                    product_name=extracted_data.get("product_name"),
+                    complaint_id=result.get("complaint_id"),
+                    due_in_days=int(decision.get("estimated_resolution_days", 3))
+                )
+                result["steps"]["mcp_task"] = task
+                logger.info(f"[orchestrator] MCP task created: {task.get('task_id')}")
+            except Exception as e:
+                logger.error(f"[orchestrator] MCP task_tool failed: {e}")
+                result["steps"]["mcp_task"] = {"status": "error", "error": str(e)}
+        else:
+            result["steps"]["mcp_task"] = {
+                "status": "skipped",
+                "reason": f"Decision was {decision.get('decision')} — no manual task needed"
+            }
 
         # ── Step 5: Insight Agent ────────────────────────────
         logger.info("[orchestrator] Step 5: Insight Agent")
@@ -194,7 +229,7 @@ class ResolveXOrchestrator:
 
         # ── Final: Customer Response ─────────────────────────
         result["customer_response"] = {
-            "acknowledgement": listener_result.get("customer_message", 
+            "acknowledgement": listener_result.get("customer_message",
                 "Thank you for reaching out. We are reviewing your complaint."),
             "resolution": decision.get("customer_message",
                 "Our team will be in touch with a resolution shortly."),
@@ -216,9 +251,7 @@ class ResolveXOrchestrator:
             return {"status": "error", "product_name": product_name, "error": str(e)}
 
     def get_dashboard_data(self) -> Dict[str, Any]:
-        """
-        Returns structured dashboard data for frontend consumption.
-        """
+        """Returns structured dashboard data for frontend consumption."""
         logger.info("[orchestrator] Building dashboard data")
         try:
             complaints: List[Dict[str, Any]] = get_all_complaints()
@@ -248,7 +281,6 @@ class ResolveXOrchestrator:
             priority_breakdown[priority] = priority_breakdown.get(priority, 0) + 1
             issue_breakdown[issue_type] = issue_breakdown.get(issue_type, 0) + 1
 
-        # Separate manufacturer stats
         manufacturer_contacted = [
             p for p in product_stats if p.get("manufacturer_contacted", False)
         ]
@@ -277,8 +309,7 @@ class ResolveXOrchestrator:
     def _increment_complaint_count(self) -> int:
         """
         Increments and returns the system-wide complaint counter.
-        Uses Firestore transactions to avoid race conditions
-        when multiple requests arrive simultaneously.
+        Uses Firestore transactions to avoid race conditions.
         """
         counter_ref = db.collection("system").document("stats")
 
@@ -299,7 +330,6 @@ class ResolveXOrchestrator:
 
         except Exception as e:
             logger.error(f"[orchestrator] Counter increment failed: {e}")
-            # Return a safe fallback so pipeline doesn't crash
             try:
                 doc = counter_ref.get()
                 return doc.to_dict().get("complaint_count", 0) if doc.exists else 0
