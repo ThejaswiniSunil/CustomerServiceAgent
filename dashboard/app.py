@@ -1,33 +1,21 @@
-"""
-dashboard/app.py  ·  ResolveX Command Center  ·  v17.0.0
-─────────────────────────────────────────────────────────
-Full feature parity with the FastAPI HTML dashboard:
-  • Sidebar chat widget (always visible)
-  • AI Thought Trace panel
-  • Live Activity Feed
-  • Monthly Calendar with ETA pills
-  • Kanban / Task Board (4 columns)
-  • Notes + Tasks + Manufacturer + Tracker operational panels
-  • Donut SVG chart
-  • 6 KPI cards incl. SLA Overdue
-  • Resolution bars + Issue donut
-  • Deep dark theme matching the original design
+import os
+import sys
+import math
+import json
+import html
+import calendar as cal_mod
+from datetime import datetime
 
-Run:
-    streamlit run dashboard/app.py
-"""
-
-import os, sys, math, json, calendar as cal_mod
-from datetime import datetime, timedelta
 import requests
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-# ── Config ──────────────────────────────────────────────────────────────────
+# ── CONFIG ──────────────────────────────────────────────────────────────────
 
-API_BASE = os.getenv("RESOLVEX_API_URL", "http://localhost:8080")
+API_BASE = os.getenv("RESOLVEX_API_URL", "http://localhost:8080").rstrip("/")
+REQUEST_TIMEOUT = 20
 
 st.set_page_config(
     page_title="ResolveX Command Center",
@@ -36,760 +24,1244 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Global CSS ───────────────────────────────────────────────────────────────
+# ── GLOBAL CSS ───────────────────────────────────────────────────────────────
 
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap');
 
+:root {
+  --bg: #08111d;
+  --panel: rgba(22, 30, 48, 0.88);
+  --panel-2: rgba(18, 26, 42, 0.92);
+  --line: rgba(255,255,255,.08);
+  --text: #f5f9ff;
+  --muted: #9aaed0;
+  --blue: #7da2ff;
+  --cyan: #67e9ff;
+  --green: #9dff8a;
+  --green-soft: rgba(157,255,138,.22);
+}
+
 html, body, [data-testid="stAppViewContainer"] {
-  background: #08111d !important;
-  color: #f5f9ff !important;
+  background:
+    radial-gradient(circle at 14% 18%, rgba(125,162,255,.12), transparent 25%),
+    radial-gradient(circle at 82% 20%, rgba(103,233,255,.09), transparent 24%),
+    linear-gradient(180deg, #07101b 0%, #091321 100%) !important;
+  color: var(--text) !important;
   font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif !important;
 }
+
 [data-testid="stAppViewContainer"]::before {
   content: "";
-  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
   background:
-    radial-gradient(circle at 10% 12%, rgba(93,133,255,.12), transparent 26%),
-    radial-gradient(circle at 86% 18%, rgba(202,109,255,.08), transparent 22%),
-    radial-gradient(circle at 52% 84%, rgba(85,230,255,.05), transparent 28%);
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(to bottom, rgba(255,255,255,.18), transparent 80%);
+  opacity: .18;
 }
+
 [data-testid="stSidebar"] {
-  background: linear-gradient(180deg,#070e1a 0%,#060b14 100%) !important;
-  border-right: 1px solid rgba(121,149,230,.12) !important;
+  background: linear-gradient(180deg, rgba(10,16,27,.96), rgba(8,12,20,.96)) !important;
+  border-right: 1px solid rgba(255,255,255,.06) !important;
+  box-shadow: inset -1px 0 0 rgba(255,255,255,.03);
 }
 [data-testid="stSidebar"] * { color: #deebff !important; }
-[data-testid="stSidebar"] .stTextArea textarea {
-  background: #0f1728 !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
-  border-radius: 12px !important;
-  color: #f5f9ff !important;
-  font-size: .85rem !important;
-}
-[data-testid="stSidebar"] .stSelectbox > div > div {
-  background: #0f1728 !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
-  border-radius: 12px !important;
-  color: #f5f9ff !important;
-}
-[data-testid="stMain"] { background: transparent !important; }
-.block-container { padding-top: 1.4rem !important; padding-bottom: 4rem !important; }
 
-[data-testid="stMetric"] {
-  background: linear-gradient(180deg,rgba(18,27,45,.97),rgba(12,19,33,.97)) !important;
-  border: 1px solid rgba(120,150,230,.14) !important;
-  border-radius: 20px !important;
-  padding: 18px 16px !important;
-  box-shadow: 0 18px 42px rgba(0,0,0,.28) !important;
-}
-[data-testid="stMetricValue"] {
-  color: #f5f9ff !important; font-size: 1.9rem !important;
-  font-weight: 800 !important; letter-spacing: -.04em !important;
-}
-[data-testid="stMetricLabel"] { color: #93a6c8 !important; font-size: .82rem !important; font-weight: 600 !important; }
-
-.stButton > button {
-  background: linear-gradient(135deg,#5d85ff,#7ca4ff) !important;
-  color: white !important; border: none !important;
-  border-radius: 14px !important; font-weight: 800 !important;
-  padding: 10px 18px !important; transition: .18s ease !important;
-  font-family: 'DM Sans', sans-serif !important;
-}
-.stButton > button:hover { filter: brightness(1.08) !important; }
-.stButton > button[kind="secondary"] {
-  background: linear-gradient(180deg,rgba(34,48,79,.95),rgba(24,35,57,.95)) !important;
-  border: 1px solid rgba(127,177,255,.16) !important;
+[data-testid="stMain"] {
+  background: transparent !important;
 }
 
-.streamlit-expanderHeader {
-  background: rgba(17,26,45,.95) !important;
-  border: 1px solid rgba(255,255,255,.07) !important;
-  border-radius: 14px !important; color: #f5f9ff !important;
-  font-weight: 700 !important;
+.block-container {
+  padding-top: 1.35rem !important;
+  padding-bottom: 4rem !important;
 }
-.streamlit-expanderContent {
-  background: rgba(12,19,33,.9) !important;
-  border: 1px solid rgba(255,255,255,.05) !important;
-  border-top: none !important; border-radius: 0 0 14px 14px !important;
-}
-
-.stSelectbox > div > div, .stTextInput > div > div > input {
-  background: #0f1728 !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
-  border-radius: 12px !important; color: #f5f9ff !important;
-}
-.stTextArea textarea {
-  background: #0f1728 !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
-  border-radius: 12px !important; color: #f5f9ff !important;
-}
-
-.stSuccess { background: rgba(79,255,176,.07) !important; border: 1px solid rgba(79,255,176,.2) !important; border-radius: 12px !important; }
-.stError   { background: rgba(255,107,125,.07) !important; border: 1px solid rgba(255,107,125,.2) !important; border-radius: 12px !important; }
-.stInfo    { background: rgba(85,230,255,.07)  !important; border: 1px solid rgba(85,230,255,.2)  !important; border-radius: 12px !important; }
-.stWarning { background: rgba(255,202,99,.07)  !important; border: 1px solid rgba(255,202,99,.2)  !important; border-radius: 12px !important; }
-
-[data-testid="stDataFrame"] {
-  border: 1px solid rgba(255,255,255,.06) !important;
-  border-radius: 14px !important; overflow: hidden !important;
-}
-
-hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; }
-
-[data-testid="stSidebar"] .stRadio > label { display: none; }
-[data-testid="stSidebar"] .stRadio div[role="radiogroup"] { gap: 4px !important; }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: rgba(255,255,255,.03); }
 ::-webkit-scrollbar-thumb { background: rgba(93,133,255,.35); border-radius: 999px; }
 
-#MainMenu, footer, header { visibility: hidden; }
-[data-testid="stToolbar"] { display: none; }
+#MainMenu, footer { visibility: hidden; }
+
+header,
+[data-testid="stHeader"] {
+  visibility: visible !important;
+  background: #08111d !important;
+  border-bottom: 1px solid rgba(255,255,255,.06) !important;
+}
+
+[data-testid="stToolbar"] {
+  display: block !important;
+  right: auto !important;
+  left: 12px !important;
+  top: 10px !important;
+}
+[data-testid="stToolbar"] button {
+  background: rgba(15,23,40,.96) !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  border-radius: 12px !important;
+  color: #dce7f7 !important;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.03) inset !important;
+}
+[data-testid="stToolbar"] button svg {
+  fill: #dce7f7 !important;
+  stroke: #dce7f7 !important;
+}
+[data-testid="stToolbar"] button:hover {
+  background: rgba(28,40,66,.98) !important;
+  border-color: rgba(93,133,255,.22) !important;
+}
+[data-testid="stToolbar"] * {
+  color: #dce7f7 !important;
+}
+
+[data-testid="stMetric"] {
+  background: linear-gradient(180deg, rgba(34,42,58,.92), rgba(27,35,49,.92)) !important;
+  border: 1px solid rgba(255,255,255,.08) !important;
+  border-radius: 18px !important;
+  padding: 18px 16px !important;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.02) inset,
+    0 10px 30px rgba(0,0,0,.28),
+    0 0 24px rgba(125,162,255,.08) !important;
+  position: relative;
+  overflow: hidden;
+}
+[data-testid="stMetric"]::after {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 12px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(157,255,138,.7), rgba(125,162,255,.85));
+  opacity: .8;
+}
+[data-testid="stMetricValue"] {
+  color: #ffffff !important;
+  font-size: 2rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -.04em !important;
+}
+[data-testid="stMetricLabel"] {
+  color: #d5e1f7 !important;
+  font-size: .82rem !important;
+  font-weight: 700 !important;
+}
+
+.stButton > button {
+  background: linear-gradient(135deg, #5f82ff, #85a6ff) !important;
+  border: 1px solid rgba(255,255,255,.08) !important;
+  box-shadow: 0 8px 20px rgba(93,133,255,.25) !important;
+  color: white !important;
+  border-radius: 14px !important;
+  font-weight: 800 !important;
+  padding: 10px 18px !important;
+  transition: .18s ease !important;
+  font-family: 'DM Sans', sans-serif !important;
+}
+.stButton > button:hover {
+  filter: brightness(1.06) !important;
+  transform: translateY(-1px);
+}
+
+.stSelectbox > div > div,
+.stTextInput > div > div > input,
+.stTextArea textarea {
+  background: #0f1728 !important;
+  border: 1px solid rgba(255,255,255,.08) !important;
+  border-radius: 12px !important;
+  color: #f5f9ff !important;
+}
+
+.stSuccess { background: rgba(79,255,176,.07) !important; border: 1px solid rgba(79,255,176,.2) !important; border-radius: 12px !important; }
+.stError   { background: rgba(255,107,125,.07) !important; border: 1px solid rgba(255,107,125,.2) !important; border-radius: 12px !important; }
+.stInfo    { background: rgba(85,230,255,.07) !important; border: 1px solid rgba(85,230,255,.2) !important; border-radius: 12px !important; }
+.stWarning { background: rgba(255,202,99,.07) !important; border: 1px solid rgba(255,202,99,.2) !important; border-radius: 12px !important; }
+
+[data-testid="stDataFrame"] {
+  border: 1px solid rgba(255,255,255,.06) !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+}
+
+hr {
+  border-color: rgba(255,255,255,.07) !important;
+  margin: 1rem 0 !important;
+}
+
+[data-testid="stSidebar"] .stRadio > label { display: none; }
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] { gap: 4px !important; }
+
+/* sidebar nav */
+[data-testid="stSidebar"] div[role="radiogroup"] > label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 12px 12px !important;
+  border-radius: 14px !important;
+  margin-bottom: 6px !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: #d6e3fa !important;
+  font-weight: 700 !important;
+  transition: .15s ease !important;
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+  background: rgba(255,255,255,.05) !important;
+  border-color: rgba(255,255,255,.08) !important;
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > label[data-selected="true"] {
+  background: rgba(255,255,255,.08) !important;
+  border-color: rgba(255,255,255,.12) !important;
+  box-shadow: 0 0 18px rgba(157,255,138,.12);
+}
+[data-testid="stSidebar"] div[role="radiogroup"] input[type="radio"] {
+  display: none !important;
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > label p::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  margin-right: 10px;
+  vertical-align: -3px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  opacity: .9;
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(1) p::before {
+  background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bed3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>\
+<path d='M3 10.5 12 3l9 7.5'/>\
+<path d='M5 9.5V21h14V9.5'/>\
+</svg>");
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(2) p::before {
+  background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bed3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>\
+<circle cx='12' cy='12' r='3'/>\
+<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.33 1V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-.33-1 1.65 1.65 0 0 0-1-.6 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 0-1-.33H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1-.33 1.65 1.65 0 0 0 .6-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 0 .33-1V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 .33 1 1.65 1.65 0 0 0 1 .6 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.24.3.44.64.6 1 .16.36.24.74.24 1.12s-.08.76-.24 1.12c-.16.36-.36.7-.6 1z'/>\
+</svg>");
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(3) p::before {
+  background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bed3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>\
+<path d='M9 11h6'/>\
+<path d='M9 15h6'/>\
+<path d='M10 3H6a2 2 0 0 0-2 2v14l4-3h10a2 2 0 0 0 2-2V8l-6-5z'/>\
+<path d='M14 3v5h5'/>\
+</svg>");
+}
+[data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(4) p::before {
+  background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bed3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>\
+<path d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/>\
+<path d='M3.3 7 12 12l8.7-5'/>\
+<path d='M12 22V12'/>\
+</svg>");
+}
 
 .rx-card {
-  background: linear-gradient(180deg,rgba(18,27,45,.97),rgba(12,19,33,.97));
-  border: 1px solid rgba(120,150,230,.14);
-  border-radius: 22px; padding: 18px; margin-bottom: 12px;
-  box-shadow: 0 18px 42px rgba(0,0,0,.28);
-  position: relative; overflow: hidden;
+  background: linear-gradient(180deg, rgba(33,41,56,.88), rgba(24,31,44,.9));
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 24px;
+  padding: 18px;
+  margin-bottom: 14px;
+  box-shadow:
+    0 16px 40px rgba(0,0,0,.28),
+    0 0 0 1px rgba(255,255,255,.02) inset,
+    0 0 30px rgba(125,162,255,.08);
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(8px);
 }
-.rx-card::before {
-  content:""; position:absolute; inset:0;
-  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent 40%);
-  pointer-events:none;
+.rx-card.glow-green {
+  box-shadow:
+    0 16px 40px rgba(0,0,0,.28),
+    0 0 0 1px rgba(255,255,255,.03) inset,
+    0 0 26px rgba(157,255,138,.18),
+    0 0 0 2px rgba(157,255,138,.18);
 }
-.rx-card-title { font-size:1rem;font-weight:800;color:#f5f9ff;letter-spacing:-.02em;margin-bottom:4px; }
-.rx-card-desc  { font-size:.8rem;color:#93a6c8;line-height:1.45;margin-bottom:12px; }
+.rx-card.glow-blue {
+  box-shadow:
+    0 16px 40px rgba(0,0,0,.28),
+    0 0 0 1px rgba(255,255,255,.03) inset,
+    0 0 26px rgba(103,233,255,.16),
+    0 0 0 2px rgba(103,233,255,.12);
+}
+.rx-card-title {
+  font-size:1rem;
+  font-weight:800;
+  color:#ffffff;
+  letter-spacing:-.02em;
+  margin-bottom:4px;
+}
+.rx-card-desc {
+  font-size:.82rem;
+  color:var(--muted);
+  line-height:1.5;
+  margin-bottom:12px;
+}
 
 .trace-line {
-  display:flex; justify-content:space-between; align-items:center;
-  padding:10px 12px; border-radius:12px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:12px 14px;
+  border-radius:14px;
   border:1px solid rgba(255,255,255,.05);
-  background:rgba(6,10,18,.5);
-  font-size:.83rem; margin-bottom:8px; gap:12px;
+  background: rgba(10,16,27,.7);
+  font-size:.9rem;
+  margin-bottom:8px;
+  gap:12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1.6;
+  color:#dfe9ff;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.02);
 }
 .trace-left  { color:#d8e6fb; flex:1; }
 .trace-right { font-weight:800; color:#abf8ca; white-space:nowrap; }
 
 .feed-item {
-  display:flex; gap:10px; padding:10px 12px;
-  border-radius:12px; border:1px solid rgba(255,255,255,.05);
-  background:rgba(17,24,40,.78); margin-bottom:8px;
+  display:flex;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.05);
+  background: rgba(18,25,38,.76);
+  margin-bottom:8px;
 }
-.feed-dot  { width:8px;height:8px;border-radius:999px;background:#55e6ff;box-shadow:0 0 10px #55e6ff;margin-top:7px;flex:0 0 8px; }
-.feed-time { color:#8da2c6;font-size:.72rem;margin-bottom:3px; }
-.feed-text { color:#dbe7f7;font-size:.8rem;line-height:1.45; }
+.feed-dot  {
+  width:9px;
+  height:9px;
+  border-radius:999px;
+  background: var(--green);
+  box-shadow:0 0 10px var(--green);
+  margin-top:7px;
+  flex:0 0 9px;
+}
+.feed-time { color:#8fa2c4; font-size:.73rem; }
+.feed-text { color:#e6efff; font-size:.83rem; line-height:1.45; }
 
 .status-item {
-  display:flex; gap:10px; align-items:flex-start; padding:10px 12px;
-  border-radius:14px; border:1px solid rgba(255,255,255,.06);
-  background:rgba(17,24,40,.82); margin-bottom:8px;
+  display:flex;
+  gap:10px;
+  align-items:flex-start;
+  padding:10px 12px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.06);
+  background: linear-gradient(180deg, rgba(28,36,51,.88), rgba(20,27,39,.92));
+  margin-bottom:8px;
 }
-.status-title { font-size:.85rem;font-weight:800;color:#f5f9ff;margin-bottom:3px; }
-.status-text  { font-size:.77rem;color:#93a6c8;line-height:1.45; }
-.dot { display:inline-block;width:10px;height:10px;border-radius:999px;margin-top:5px;flex:0 0 10px; }
+.status-title { font-size:.85rem; font-weight:800; color:#f5f9ff; margin-bottom:3px; }
+.status-text  { font-size:.77rem; color:#93a6c8; line-height:1.45; }
+.dot { display:inline-block; width:10px; height:10px; border-radius:999px; margin-top:5px; flex:0 0 10px; }
 .dot-pending { background:#7c8aa6; }
-.dot-running { background:#55e6ff;box-shadow:0 0 12px #55e6ff; }
-.dot-done    { background:#4fffb0;box-shadow:0 0 12px #4fffb0; }
-.dot-error   { background:#ff6b7d;box-shadow:0 0 12px #ff6b7d; }
+.dot-running { background:#55e6ff; box-shadow:0 0 12px #55e6ff; }
+.dot-done    { background:#4fffb0; box-shadow:0 0 12px #4fffb0; }
+.dot-error   { background:#ff6b7d; box-shadow:0 0 12px #ff6b7d; }
 
 .tool-card {
-  padding:14px; border-radius:14px;
+  padding:14px;
+  border-radius:16px;
   border:1px solid rgba(255,255,255,.06);
-  background:rgba(17,24,40,.82); margin-bottom:8px;
+  background: linear-gradient(180deg, rgba(28,36,51,.88), rgba(20,27,39,.92));
+  margin-bottom:8px;
 }
-.tool-head  { display:flex;justify-content:space-between;align-items:center;margin-bottom:8px; }
-.tool-title { font-size:.86rem;font-weight:800;color:#f5f9ff; }
-.tool-badge { font-size:.72rem;color:#bcecff;border:1px solid rgba(85,230,255,.2);background:rgba(85,230,255,.08);border-radius:999px;padding:4px 8px; }
-.tool-text  { font-size:.78rem;line-height:1.5;color:#93a6c8;white-space:pre-wrap;word-break:break-word; }
+.tool-head  { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.tool-title { font-size:.86rem; font-weight:800; color:#f5f9ff; }
+.tool-badge {
+  font-size:.72rem;
+  color:#bcecff;
+  border:1px solid rgba(85,230,255,.2);
+  background:rgba(85,230,255,.08);
+  border-radius:999px;
+  padding:4px 8px;
+}
+.tool-text {
+  font-size:.78rem;
+  line-height:1.5;
+  color:#93a6c8;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
 
 .rx-pill {
-  display:inline-block; border:1px solid rgba(255,255,255,.08);
-  background:rgba(17,26,45,.9); border-radius:999px;
-  padding:5px 12px; font-size:.75rem; color:#dce7f7; margin:3px;
+  display:inline-block;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(17,26,45,.9);
+  border-radius:999px;
+  padding:5px 12px;
+  font-size:.75rem;
+  color:#dce7f7;
+  margin:3px;
 }
 
-.cal-grid { display:grid;grid-template-columns:repeat(7,1fr);gap:8px; }
-.cal-day-name { text-align:center;font-size:.72rem;color:#93a6c8;font-weight:700;padding-bottom:6px; }
+.cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+.cal-day-name { text-align:center; font-size:.72rem; color:#93a6c8; font-weight:700; padding-bottom:6px; }
 .cal-cell {
-  min-height:70px; border-radius:14px;
+  min-height:70px;
+  border-radius:14px;
   border:1px solid rgba(255,255,255,.05);
-  background:rgba(12,18,32,.6); padding:8px;
+  background:rgba(12,18,32,.6);
+  padding:8px;
 }
 .cal-cell.dim   { opacity:.3; }
-.cal-cell.today { border-color:rgba(85,230,255,.35);box-shadow:0 0 14px rgba(85,230,255,.1); }
-.cal-date { font-size:.76rem;font-weight:800;color:#dce7f7;margin-bottom:4px; }
+.cal-cell.today { border-color:rgba(85,230,255,.35); box-shadow:0 0 14px rgba(85,230,255,.1); }
+.cal-date { font-size:.76rem; font-weight:800; color:#dce7f7; margin-bottom:4px; }
 .cal-pill {
-  border-radius:999px; padding:3px 7px; font-size:.67rem; font-weight:700;
-  background:rgba(93,133,255,.18); color:#ddecff;
+  border-radius:999px;
+  padding:3px 7px;
+  font-size:.67rem;
+  font-weight:700;
+  background:rgba(93,133,255,.18);
+  color:#ddecff;
   border:1px solid rgba(93,133,255,.16);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  display:block;margin-top:3px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  display:block;
+  margin-top:3px;
 }
 
-.kanban-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:10px; }
+.kanban-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
 .kan-col {
-  border-radius:16px; border:1px solid rgba(255,255,255,.05);
-  background:rgba(13,19,33,.72); padding:12px; min-height:220px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.05);
+  background:rgba(13,19,33,.72);
+  padding:12px;
+  min-height:220px;
 }
-.kan-head { display:flex;justify-content:space-between;margin-bottom:10px;font-size:.82rem;font-weight:800;color:#f5f9ff; }
+.kan-head { display:flex; justify-content:space-between; margin-bottom:10px; font-size:.82rem; font-weight:800; color:#f5f9ff; }
 .task-card {
-  border-radius:12px; border:1px solid rgba(255,255,255,.05);
-  background:rgba(18,27,45,.92); padding:10px; margin-bottom:8px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.05);
+  background:rgba(18,27,45,.92);
+  padding:10px;
+  margin-bottom:8px;
 }
-.task-title { font-size:.8rem;font-weight:800;color:#f5f9ff;margin-bottom:3px; }
-.task-sub   { font-size:.72rem;color:#93a6c8;line-height:1.4; }
+.task-title { font-size:.8rem; font-weight:800; color:#f5f9ff; margin-bottom:3px; }
+.task-sub   { font-size:.72rem; color:#93a6c8; line-height:1.4; }
 
 .chat-msg-user {
   background: linear-gradient(135deg,#5d85ff,#7ca4ff);
-  color: white; border-radius: 14px; padding: 10px 14px;
-  font-size: .86rem; line-height: 1.5; margin-bottom: 8px;
-  max-width: 90%; margin-left: auto; text-align: right;
+  color: white;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: .86rem;
+  line-height: 1.5;
+  margin-bottom: 8px;
+  max-width: 90%;
+  margin-left: auto;
+  text-align: right;
 }
 .chat-msg-bot {
   background: rgba(17,26,45,.95);
   border: 1px solid rgba(255,255,255,.07);
-  color: #dbe7f7; border-radius: 14px; padding: 10px 14px;
-  font-size: .86rem; line-height: 1.5; margin-bottom: 8px;
+  color: #dbe7f7;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: .86rem;
+  line-height: 1.5;
+  margin-bottom: 8px;
 }
 .chat-msg-sys {
   background: rgba(85,230,255,.07);
   border: 1px solid rgba(85,230,255,.14);
-  color: #9ecfdf; border-radius: 14px; padding: 8px 12px;
-  font-size: .78rem; font-style: italic; margin-bottom: 8px;
+  color: #9ecfdf;
+  border-radius: 14px;
+  padding: 8px 12px;
+  font-size: .78rem;
+  font-style: italic;
+  margin-bottom: 8px;
 }
 
-.bar-row { display:grid;grid-template-columns:130px 1fr 40px;gap:10px;align-items:center;margin-bottom:10px; }
-.bar-label { font-size:.84rem;color:#d9e6f7; }
-.bar-track { height:14px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);overflow:hidden; }
-.bar-fill  { height:100%;border-radius:999px; }
-.bar-value { text-align:right;font-weight:800;font-size:.8rem;color:#f5f9ff; }
+.bar-row {
+  display:grid;
+  grid-template-columns:130px 1fr 40px;
+  gap:10px;
+  align-items:center;
+  margin-bottom:10px;
+}
+.bar-label { font-size:.84rem; color:#d9e6f7; }
+.bar-track {
+  height:14px;
+  border-radius:999px;
+  background: rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.05);
+  overflow:hidden;
+}
+.bar-fill  {
+  height:100%;
+  border-radius:999px;
+  box-shadow: 0 0 16px currentColor;
+}
+.bar-value { text-align:right; font-weight:800; font-size:.8rem; color:#f5f9ff; }
 
 .side-label {
-  color:#7f90b1;font-size:.71rem;font-weight:800;
-  text-transform:uppercase;letter-spacing:.14em;padding:0 4px;margin-top:8px;
+  color:#8fa3c7;
+  font-size:.72rem;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.15em;
+  padding:0 4px;
+  margin-top:8px;
 }
 
 .product-card {
-  border-radius:16px;border:1px solid rgba(255,255,255,.06);
-  background:rgba(15,23,40,.86);padding:16px;margin-bottom:12px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.06);
+  background: linear-gradient(180deg, rgba(28,36,51,.88), rgba(20,27,39,.92));
+  padding:16px;
+  margin-bottom:12px;
 }
 .mini-stat {
-  border-radius:12px;border:1px solid rgba(255,255,255,.05);
-  background:#111a2d;padding:10px;text-align:center;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.05);
+  background:#111a2d;
+  padding:10px;
+  text-align:center;
 }
-.mini-stat span   { display:block;color:#93a6c8;font-size:.72rem;margin-bottom:5px; }
-.mini-stat strong { font-size:.92rem;font-weight:800;color:#f5f9ff; }
+.mini-stat span   { display:block; color:#93a6c8; font-size:.72rem; margin-bottom:5px; }
+.mini-stat strong { font-size:.92rem; font-weight:800; color:#f5f9ff; }
+
+/* floating chat button */
+div.st-key-rx_chat_fab {
+  position: fixed !important;
+  right: 20px !important;
+  bottom: 28px !important;
+  z-index: 10000 !important;
+  width: 76px !important;
+  height: 76px !important;
+}
+div.st-key-rx_chat_fab > div,
+div.st-key-rx_chat_fab [data-testid="stVerticalBlock"] {
+  background: transparent !important;
+}
+div.st-key-rx_chat_fab button {
+  width: 76px !important;
+  height: 76px !important;
+  min-height: 76px !important;
+  border-radius: 999px !important;
+  padding: 0 !important;
+  font-size: 0 !important;
+  color: transparent !important;
+  text-indent: -9999px !important;
+  overflow: hidden !important;
+  line-height: 0 !important;
+  background: linear-gradient(135deg,#6f93ff,#6d97ff) !important;
+  box-shadow: 0 12px 42px rgba(93,133,255,.40), 0 0 34px rgba(93,133,255,.20) !important;
+  position: relative !important;
+  border: none !important;
+}
+div.st-key-rx_chat_fab button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 30px;
+  height: 30px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'>\
+<path d='M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'/>\
+</svg>");
+}
+div.st-key-rx_chat_fab button:hover {
+  transform: scale(1.04);
+  filter: brightness(1.04) !important;
+}
+
+/* floating chat panel */
+div.st-key-rx_chat_panel {
+  position: fixed !important;
+  right: 20px !important;
+  bottom: 120px !important;
+  z-index: 9999 !important;
+  width: 390px !important;
+  max-width: calc(100vw - 24px) !important;
+  background: #08111d !important;
+  border-radius: 22px !important;
+  border: 1px solid rgba(93,133,255,.22) !important;
+  box-shadow: 0 24px 64px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.04) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+div.st-key-rx_chat_panel > div,
+div.st-key-rx_chat_panel [data-testid="stVerticalBlock"],
+div.st-key-rx_chat_panel [data-testid="column"] {
+  background: #08111d !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+.rx-chat-shell {
+  width: 100%;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #08111d;
+  border: none;
+  box-shadow: none;
+}
+.rx-chat-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:14px 16px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  background: rgba(13,22,40,.96);
+}
+.rx-chat-header-left {
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.rx-chat-header-dot {
+  width:8px;
+  height:8px;
+  border-radius:999px;
+  background:#55e6ff;
+  box-shadow:0 0 8px #55e6ff;
+}
+.rx-chat-header-title {
+  font-weight:800;
+  font-size:.9rem;
+  color:#f5f9ff;
+}
+.rx-chat-messages {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 12px 12px 4px 12px;
+  background: rgba(8,14,25,.98);
+}
+.rx-chat-form {
+  padding: 12px;
+  border-top: 1px solid rgba(255,255,255,.06);
+  background: rgba(9,16,28,.98);
+}
+.rx-chat-sample-note {
+  font-size:.72rem;
+  color:#7f90b1;
+  margin-bottom:6px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.10em;
+}
+div.st-key-rx_chat_close button {
+  width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  border-radius: 8px !important;
+  padding: 0 !important;
+  font-size: 18px !important;
+  background: rgba(255,255,255,.04) !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+}
+div.st-key-rx_chat_close button:hover {
+  background: rgba(255,107,125,.12) !important;
+  border-color: rgba(255,107,125,.2) !important;
+  color: #ff6b7d !important;
+}
+div.st-key-rx_chat_panel .stSelectbox,
+div.st-key-rx_chat_panel .stTextArea,
+div.st-key-rx_chat_panel .stButton {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+div.st-key-rx_chat_panel .stTextArea textarea {
+  min-height: 110px !important;
+}
+div.st-key-rx_chat_panel .stSelectbox > div > div,
+div.st-key-rx_chat_panel .stTextArea textarea {
+  background: #0c1526 !important;
+}
+div.st-key-rx_chat_panel .stButton button {
+  height: 46px !important;
+  min-height: 46px !important;
+}
+
+@media (max-width: 900px) {
+  div.st-key-rx_chat_panel {
+    width: calc(100vw - 24px) !important;
+    right: 12px !important;
+    bottom: 108px !important;
+  }
+  div.st-key-rx_chat_fab {
+    right: 12px !important;
+    bottom: 18px !important;
+  }
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ── Session state ────────────────────────────────────────────────────────────
+# ── HELPERS ─────────────────────────────────────────────────────────────────
 
-def _default_statuses():
-    return [
-        {"key":"listener",     "title":"Listener Agent",               "state":"pending", "text":"Waiting for complaint."},
-        {"key":"analyst",      "title":"Analyzer Agent",               "state":"pending", "text":"Waiting for eligibility check."},
-        {"key":"decision",     "title":"Decision Agent",               "state":"pending", "text":"Waiting for resolution selection."},
-        {"key":"database",     "title":"Database",                     "state":"pending", "text":"Waiting for case log."},
-        {"key":"notes",        "title":"Notes",                        "state":"pending", "text":"Waiting for notes visibility."},
-        {"key":"tasks",        "title":"Tasks",                        "state":"pending", "text":"Waiting for task visibility."},
-        {"key":"calendar",     "title":"Calendar",                     "state":"pending", "text":"Waiting for follow-up schedule."},
-        {"key":"manufacturer", "title":"Communication / Manufacturer", "state":"pending", "text":"Waiting for manufacturer state."},
-        {"key":"tracker",      "title":"Tracking Agent",               "state":"pending", "text":"Tracker not run yet."},
-        {"key":"customer",     "title":"Customer Portal",              "state":"pending", "text":"No final response yet."},
-    ]
+def esc(x):
+    return html.escape("" if x is None else str(x))
 
-def _default_tools():
+def now_label():
+    return datetime.now().strftime("%B %d, %Y  %H:%M:%S")
+
+def safe_json(value, fallback=None):
+    try:
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
+    except Exception:
+        return fallback if fallback is not None else {}
+
+def api_get(path, params=None):
+    try:
+        r = requests.get(f"{API_BASE}{path}", params=params, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        if "application/json" in r.headers.get("content-type", ""):
+            return True, r.json()
+        return True, {"text": r.text}
+    except Exception as e:
+        return False, {"error": str(e)}
+
+def api_post(path, payload=None):
+    try:
+        r = requests.post(f"{API_BASE}{path}", json=payload or {}, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        if "application/json" in r.headers.get("content-type", ""):
+            return True, r.json()
+        return True, {"text": r.text}
+    except Exception as e:
+        return False, {"error": str(e)}
+
+def pull_list(data, *keys):
+    for k in keys:
+        if isinstance(data, dict) and isinstance(data.get(k), list):
+            return data.get(k)
+    return []
+
+@st.cache_data(ttl=15)
+def fetch_all_data():
+    ok_c, c_data = api_get("/complaints")
+    ok_p, p_data = api_get("/products")
+    ok_d, d_data = api_get("/dashboard")
+    ok_h, h_data = api_get("/health")
+
+    complaints = []
+    pending = []
+    products = []
+    summary = {}
+    api_ok = ok_h or ok_c or ok_p or ok_d
+
+    if ok_c:
+        if isinstance(c_data, list):
+            complaints = c_data
+        elif isinstance(c_data, dict):
+            complaints = pull_list(c_data, "complaints", "items", "data")
+            pending = pull_list(c_data, "pending", "pending_cases", "manufacturer_pending")
+
+    if ok_p:
+        if isinstance(p_data, list):
+            products = p_data
+        elif isinstance(p_data, dict):
+            products = pull_list(p_data, "products", "items", "data", "product_stats")
+
+    if ok_d and isinstance(d_data, dict):
+        summary = d_data.get("data", d_data)
+
     return {
-        "notes":        {"title":"Notes",        "badge":"Connected", "body":"No notes loaded yet."},
-        "tasks":        {"title":"Tasks",         "badge":"Connected", "body":"No tasks loaded yet."},
-        "calendar":     {"title":"Calendar",      "badge":"Connected", "body":"No calendar items loaded yet."},
-        "manufacturer": {"title":"Manufacturer",  "badge":"Connected", "body":"No manufacturer data loaded yet."},
-        "tracker":      {"title":"Tracker",       "badge":"Connected", "body":"Tracker has not been run yet."},
+        "api_ok": api_ok,
+        "health": h_data if ok_h else {},
+        "complaints": complaints,
+        "pending": pending,
+        "products": products,
+        "summary": summary,
     }
 
-def _init_state():
-    defaults = {
-        "chat_messages": [
-            {"type":"sys",  "text":"ResolveX chat ready"},
-            {"type":"bot",  "text":"Hi! Tell me what happened with your order and I'll help you through it."},
-        ],
-        "trace_items":       [],
-        "activity_items":    [],
-        "last_product":      None,
-        "last_complaint_id": None,
-        "statuses":          _default_statuses(),
-        "tool_panels":       _default_tools(),
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+def status_color(status):
+    status = str(status or "").lower()
+    if status in {"running", "active", "in_progress"}:
+        return "running"
+    if status in {"done", "complete", "completed", "ok", "healthy", "connected"}:
+        return "done"
+    if status in {"error", "failed", "down"}:
+        return "error"
+    return "pending"
 
-_init_state()
-
-# ── API helpers ──────────────────────────────────────────────────────────────
-
-@st.cache_data(ttl=30)
-def fetch_dashboard() -> dict:
-    try:
-        r = requests.get(f"{API_BASE}/dashboard", timeout=10); r.raise_for_status()
-        return r.json().get("data", r.json()) or {}
-    except: return {}
-
-@st.cache_data(ttl=30)
-def fetch_complaints() -> list:
-    try:
-        r = requests.get(f"{API_BASE}/complaints", timeout=10); r.raise_for_status()
-        d = r.json(); return d.get("complaints", d.get("data", []))
-    except: return []
-
-@st.cache_data(ttl=30)
-def fetch_products() -> list:
-    try:
-        r = requests.get(f"{API_BASE}/products", timeout=10); r.raise_for_status()
-        d = r.json(); return d.get("products", d.get("product_stats", d.get("data", [])))
-    except: return []
-
-@st.cache_data(ttl=30)
-def fetch_pending() -> list:
-    try:
-        r = requests.get(f"{API_BASE}/manufacturer/pending", timeout=10); r.raise_for_status()
-        d = r.json(); return d.get("pending", d.get("pending_contacts", d.get("data", [])))
-    except: return []
-
-def api_get(path):
-    try:
-        r = requests.get(f"{API_BASE}{path}", timeout=10)
-        return r.ok, r.json() if r.ok else {}
-    except: return False, {}
-
-def api_post(path, payload):
-    try:
-        r = requests.post(f"{API_BASE}{path}", json=payload, timeout=90)
-        return r.ok, r.json() if r.ok else {}
-    except Exception as e: return False, {"error": str(e)}
-
-def check_api() -> bool:
-    try: return requests.get(f"{API_BASE}/health", timeout=4).ok
-    except: return False
-
-# ── State helpers ────────────────────────────────────────────────────────────
+def append_chat(kind, text):
+    st.session_state.chat_messages.append({
+        "kind": kind,
+        "text": text,
+        "ts": datetime.now().strftime("%H:%M")
+    })
 
 def push_trace(text, status="OK"):
-    st.session_state.trace_items.insert(0, {"text": text, "status": status})
-    st.session_state.trace_items = st.session_state.trace_items[:8]
+    st.session_state.trace_lines.insert(0, {
+        "text": text,
+        "status": status,
+        "ts": datetime.now().strftime("%H:%M:%S")
+    })
+    st.session_state.trace_lines = st.session_state.trace_lines[:12]
 
 def push_activity(text):
-    st.session_state.activity_items.insert(0, {"time": datetime.now().strftime("%H:%M:%S"), "text": text})
-    st.session_state.activity_items = st.session_state.activity_items[:16]
+    st.session_state.activity_feed.insert(0, {
+        "text": text,
+        "ts": datetime.now().strftime("%H:%M:%S")
+    })
+    st.session_state.activity_feed = st.session_state.activity_feed[:14]
 
-def set_status(key, state, text):
-    for s in st.session_state.statuses:
-        if s["key"] == key:
-            s["state"] = state; s["text"] = text; break
+def set_status(name, state, desc):
+    st.session_state.system_status[name] = {"state": state, "desc": desc}
 
-def set_tool(key, body, badge="Connected"):
-    if key in st.session_state.tool_panels:
-        st.session_state.tool_panels[key]["body"] = body
-        st.session_state.tool_panels[key]["badge"] = badge
+def set_tool(name, content):
+    st.session_state.tool_panels[name] = content
 
-def append_chat(msg_type, text):
-    st.session_state.chat_messages.append({"type": msg_type, "text": text})
+def infer_counts(complaints, summary, pending):
+    total_c = len(complaints)
 
-def reset_session():
-    for k in ["chat_messages","trace_items","activity_items","last_product",
-              "last_complaint_id","statuses","tool_panels"]:
-        if k in st.session_state: del st.session_state[k]
-    _init_state()
+    active = sum(
+        1 for c in complaints
+        if not c.get("loop_closed_at")
+        and str(c.get("status", "")).lower() not in {"closed", "resolved", "complete", "completed"}
+    )
+    resolved = sum(
+        1 for c in complaints
+        if c.get("loop_closed_at")
+        or c.get("resolution")
+        or str(c.get("status", "")).lower() in {"closed", "resolved", "complete", "completed"}
+    )
+    escalated = sum(
+        1 for c in complaints
+        if c.get("escalated")
+        or c.get("manufacturer_contacted")
+        or str(c.get("decision", "")).lower() == "escalate"
+    )
 
-# ── Derived data ─────────────────────────────────────────────────────────────
-
-def derive_tasks(complaints, pending):
-    tasks = []
+    overdue = 0
+    now_dt = datetime.now()
     for c in complaints:
-        base = {
-            "id":     c.get("complaint_id", "—"),
-            "title":  c.get("product_name", "Unknown"),
-            "detail": f"{c.get('issue_type','issue')} · {c.get('urgency_level','?')} urgency"
-        }
-        if c.get("loop_closed_at"):                                  col = "resolved"
-        elif (c.get("resolution","")).lower().find("escalate") >= 0: col = "escalated"
-        elif c.get("manufacturer_contacted"):                         col = "waiting"
-        else:                                                         col = "review"
-        tasks.append({**base, "col": col})
-    for m in pending:
-        tasks.append({
-            "col":    "resolved" if m.get("issue_resolved") else "waiting",
-            "id":     m.get("product_name", "—"),
-            "title":  f"Manufacturer: {m.get('product_name','Unknown')}",
-            "detail": f"Email: {'yes' if m.get('email_sent') else 'no'} · Follow-ups: {m.get('follow_up_count',0)}"
-        })
-    return tasks[:24]
+        due = c.get("eta") or c.get("sla_due") or c.get("due_date")
+        if not due:
+            continue
+        try:
+            due_dt = datetime.fromisoformat(str(due).replace("Z", "+00:00").replace("+00:00", ""))
+            closed = c.get("loop_closed_at") or c.get("resolved_at")
+            if due_dt < now_dt and not closed:
+                overdue += 1
+        except Exception:
+            pass
 
-def derive_calendar_events(complaints, pending):
-    events = []
+    if summary.get("total_complaints") is not None:
+        total_c = summary.get("total_complaints", total_c)
+    if summary.get("active_cases") is not None:
+        active = summary.get("active_cases", active)
+    if summary.get("resolved") is not None:
+        resolved = summary.get("resolved", resolved)
+    if summary.get("escalated") is not None:
+        escalated = summary.get("escalated", escalated)
+    if summary.get("sla_overdue") is not None:
+        overdue = summary.get("sla_overdue", overdue)
+
+    manufacturer_cases = len(pending) or summary.get("manufacturer_contacted", 0)
+    return total_c, active, resolved, escalated, overdue, manufacturer_cases
+
+def compute_issue_breakdown(complaints):
+    out = {}
     for c in complaints:
-        if not c.get("created_at") or not c.get("estimated_resolution_days"): continue
-        try:
-            created = datetime.fromisoformat(str(c["created_at"]).replace("Z", "+00:00"))
-            due = created + timedelta(days=int(c["estimated_resolution_days"] or 0))
-            events.append({"date": due, "label": f"{c.get('product_name','Case')} due"})
-        except: pass
-    for m in pending:
-        base = m.get("updated_at") or m.get("contacted_at") or m.get("created_at")
-        if not base: continue
-        try:
-            d = datetime.fromisoformat(str(base).replace("Z", "+00:00")) + timedelta(days=1)
-            events.append({"date": d, "label": f"{m.get('product_name','Manufacturer')} follow-up"})
-        except: pass
-    return events[:30]
+        key = c.get("issue_type") or c.get("category") or c.get("complaint_type") or c.get("type") or "General"
+        out[key] = out.get(key, 0) + 1
+    if not out:
+        out = {"General": 1}
+    return dict(sorted(out.items(), key=lambda x: x[1], reverse=True)[:6])
 
-def derive_notes(complaints):
-    rows = [
-        f"Case {c.get('complaint_id','—')} · {c.get('product_name','?')} · "
-        f"{c.get('issue_type','?')} · resolution: {c.get('resolution','pending')}"
-        for c in complaints[:5]
-    ]
-    return "\n".join(rows) if rows else "No recent notes available."
+def compute_resolution_breakdown(complaints):
+    out = {}
+    for c in complaints:
+        key = c.get("resolution") or c.get("decision") or c.get("outcome") or c.get("status") or "Pending"
+        key = str(key).replace("_", " ").title()
+        out[key] = out.get(key, 0) + 1
+    if not out:
+        out = {"Pending": 1}
+    return dict(sorted(out.items(), key=lambda x: x[1], reverse=True)[:6])
 
-# ── HTML render helpers ──────────────────────────────────────────────────────
+def build_calendar_items(complaints):
+    items = {}
+    for c in complaints:
+        raw = c.get("eta") or c.get("follow_up_date") or c.get("due_date")
+        label = c.get("product_name") or c.get("product") or c.get("order_id") or "Case"
+        if not raw:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00").replace("+00:00", ""))
+            d = dt.date().isoformat()
+            items.setdefault(d, []).append(label)
+        except Exception:
+            continue
+    return items
+
+def build_kanban(complaints):
+    cols = {"New": [], "Analyzing": [], "Manufacturer": [], "Resolved": []}
+    for c in complaints[:24]:
+        status = str(c.get("status", "")).lower()
+        title = c.get("product_name") or c.get("product") or c.get("order_id") or "Case"
+        sub = c.get("issue_type") or c.get("category") or c.get("complaint") or c.get("summary") or "Complaint case"
+        item = {"title": title, "sub": str(sub)[:80]}
+
+        if status in {"resolved", "closed", "complete", "completed"} or c.get("loop_closed_at"):
+            cols["Resolved"].append(item)
+        elif c.get("manufacturer_contacted") or c.get("escalated"):
+            cols["Manufacturer"].append(item)
+        elif status in {"analyzing", "analysis", "processing", "investigating", "in_progress"}:
+            cols["Analyzing"].append(item)
+        else:
+            cols["New"].append(item)
+    return cols
 
 def render_trace_html():
-    items = st.session_state.trace_items
-    if not items:
-        return '<div style="color:#93a6c8;font-size:.84rem;padding:4px 0;">No trace yet.</div>'
-    rows = ""
-    for item in items:
-        color = "#abf8ca" if item["status"] == "OK" else "#ff6b7d" if item["status"] == "ERR" else "#55e6ff"
-        rows += f'<div class="trace-line"><div class="trace-left">&gt; {item["text"]}</div><div class="trace-right" style="color:{color};">[{item["status"]}]</div></div>'
-    return rows
+    rows = st.session_state.trace_lines or [{"text": "System initialized.", "status": "OK"}]
+    return "".join(
+        f'<div class="trace-line"><div class="trace-left">{esc(r.get("text",""))}</div><div class="trace-right">{esc(r.get("status","OK"))}</div></div>'
+        for r in rows
+    )
 
 def render_activity_html():
-    items = st.session_state.activity_items
-    if not items:
-        return '<div style="color:#93a6c8;font-size:.84rem;padding:4px 0;">No activity yet.</div>'
-    rows = ""
-    for item in items:
-        rows += f'<div class="feed-item"><div class="feed-dot"></div><div><div class="feed-time">{item["time"]}</div><div class="feed-text">{item["text"]}</div></div></div>'
-    return rows
+    rows = st.session_state.activity_feed or [{"text": "Awaiting events.", "ts": datetime.now().strftime("%H:%M:%S")}]
+    out = []
+    for row in rows:
+        out.append(
+            f'''
+            <div class="feed-item">
+              <div class="feed-dot"></div>
+              <div>
+                <div class="feed-time">{esc(row.get("ts",""))}</div>
+                <div class="feed-text">{esc(row.get("text",""))}</div>
+              </div>
+            </div>
+            '''
+        )
+    return "".join(out)
 
 def render_status_html():
-    html = ""
-    for s in st.session_state.statuses:
-        html += (
-            f'<div class="status-item">'
-            f'<span class="dot dot-{s["state"]}"></span>'
-            f'<div><div class="status-title">{s["title"]}</div>'
-            f'<div class="status-text">{s["text"]}</div></div></div>'
+    items = st.session_state.system_status
+    order = ["listener", "analyst", "decision", "manufacturer", "tracker", "database"]
+    names = {
+        "listener": "Listener Agent",
+        "analyst": "Analyst Agent",
+        "decision": "Decision Agent",
+        "manufacturer": "Manufacturer Agent",
+        "tracker": "Tracker Agent",
+        "database": "Database Agent",
+    }
+    out = []
+    for key in order:
+        data = items.get(key, {"state": "pending", "desc": "Waiting..."})
+        cls = status_color(data.get("state"))
+        out.append(
+            f'''
+            <div class="status-item">
+              <span class="dot dot-{cls}"></span>
+              <div>
+                <div class="status-title">{esc(names.get(key, key.title()))}</div>
+                <div class="status-text">{esc(data.get("desc",""))}</div>
+              </div>
+            </div>
+            '''
         )
-    return html
+    return "".join(out)
 
 def render_tools_html():
-    html = ""
-    for panel in st.session_state.tool_panels.values():
-        body = str(panel["body"])[:600]
-        html += (
-            f'<div class="tool-card">'
-            f'<div class="tool-head"><div class="tool-title">{panel["title"]}</div>'
-            f'<div class="tool-badge">{panel["badge"]}</div></div>'
-            f'<div class="tool-text">{body}</div></div>'
+    panels = st.session_state.tool_panels
+    labels = {
+        "notes": "Notes",
+        "tasks": "Tasks",
+        "manufacturer": "Manufacturer",
+        "tracker": "Tracker",
+        "calendar": "Calendar",
+    }
+    badges = {
+        "notes": "Memory",
+        "tasks": "Board",
+        "manufacturer": "Escalation",
+        "tracker": "Follow-up",
+        "calendar": "Schedule",
+    }
+    out = []
+    for key in ["notes", "tasks", "manufacturer", "tracker", "calendar"]:
+        out.append(
+            f'''
+            <div class="tool-card">
+              <div class="tool-head">
+                <div class="tool-title">{esc(labels[key])}</div>
+                <div class="tool-badge">{esc(badges[key])}</div>
+              </div>
+              <div class="tool-text">{esc(panels.get(key, "No output yet."))}</div>
+            </div>
+            '''
         )
-    return html
-
-def render_bars_html(data: dict):
-    if not data:
-        return '<div style="color:#93a6c8;font-size:.84rem;">No data available.</div>'
-    colors = ["#55e6ff","#ca6dff","#ffca63","#5d85ff","#4fffb0","#ff6b7d"]
-    items  = list(data.items())
-    max_v  = max((float(v or 0) for _, v in items), default=1) or 1
-    html   = ""
-    for i, (label, value) in enumerate(items):
-        pct   = float(value or 0) / max_v * 100
-        color = colors[i % len(colors)]
-        html += (
-            f'<div class="bar-row">'
-            f'<div class="bar-label">{label}</div>'
-            f'<div class="bar-track"><div class="bar-fill" style="width:{pct:.1f}%;background:{color};box-shadow:0 0 10px {color};"></div></div>'
-            f'<div class="bar-value">{value}</div></div>'
-        )
-    return html
-
-def render_donut_html(data: dict):
-    colors = ["#ff6b7d","#5d85ff","#55e6ff","#ffca63","#ca6dff","#4fffb0"]
-    items  = [(k, int(v or 0)) for k, v in data.items()] if data else []
-    total  = sum(v for _, v in items) or 1
-    cx, cy, r, stroke = 110, 100, 68, 26
-    circumference = 2 * math.pi * r
-    offset  = 0
-    circles = ""
-    for i, (label, value) in enumerate(items):
-        pct   = value / total
-        dash  = pct * circumference
-        color = colors[i % len(colors)]
-        circles += (
-            f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}"'
-            f' stroke-width="{stroke}" stroke-linecap="round"'
-            f' stroke-dasharray="{dash:.2f} {circumference:.2f}"'
-            f' stroke-dashoffset="{-offset:.2f}"'
-            f' transform="rotate(-90 {cx} {cy})"'
-            f' style="filter:drop-shadow(0 0 8px {color});"></circle>'
-        )
-        offset += dash
-    circles += (
-        f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none"'
-        f' stroke="rgba(255,255,255,.06)" stroke-width="{stroke}"'
-        f' stroke-dasharray="{circumference:.2f} {circumference:.2f}"></circle>'
-    )
-    legend = "".join(
-        f'<div style="display:flex;align-items:center;gap:8px;font-size:.82rem;color:#d6e3f6;">'
-        f'<span style="width:10px;height:10px;border-radius:999px;background:{colors[i%len(colors)]};'
-        f'box-shadow:0 0 10px {colors[i%len(colors)]};flex:0 0 10px;display:inline-block;"></span>'
-        f'{label} {value}</div>'
-        for i, (label, value) in enumerate(items)
-    )
-    return (
-        f'<div style="display:flex;flex-direction:column;align-items:center;">'
-        f'<div style="position:relative;display:inline-block;">'
-        f'<svg width="220" height="200" viewBox="0 0 220 200">{circles}'
-        f'<text x="{cx}" y="{cy-6}" text-anchor="middle" fill="#f5f9ff" font-size="22" font-weight="800">{total}</text>'
-        f'<text x="{cx}" y="{cy+16}" text-anchor="middle" fill="#93a6c8" font-size="11">Issues tracked</text>'
-        f'</svg></div>'
-        f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin-top:8px;width:100%;">{legend}</div>'
-        f'</div>'
-    )
-
-def render_calendar_html(complaints, pending):
-    today = datetime.now()
-    year, month = today.year, today.month
-    first_day     = datetime(year, month, 1)
-    start_wd      = (first_day.weekday() + 1) % 7
-    days_in_month = cal_mod.monthrange(year, month)[1]
-    prev_days     = cal_mod.monthrange(year, month - 1 if month > 1 else 12)[1]
-
-    events    = derive_calendar_events(complaints, pending)
-    event_map = {}
-    for ev in events:
-        key = ev["date"].strftime("%Y-%m-%d")
-        event_map.setdefault(key, []).append(ev["label"])
-
-    day_names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
-    html  = f'<div style="font-weight:800;font-size:.9rem;color:#f5f9ff;margin-bottom:10px;">{today.strftime("%B %Y")}</div>'
-    html += '<div class="cal-grid">'
-    html += "".join(f'<div class="cal-day-name">{n}</div>' for n in day_names)
-
-    for i in range(42):
-        if i < start_wd:
-            day_num   = prev_days - start_wd + i + 1
-            cell_date = datetime(year, month - 1 if month > 1 else 12, day_num)
-            dim       = True
-        elif i >= start_wd + days_in_month:
-            day_num   = i - (start_wd + days_in_month) + 1
-            cell_date = datetime(year, month + 1 if month < 12 else 1, day_num)
-            dim       = True
-        else:
-            day_num   = i - start_wd + 1
-            cell_date = datetime(year, month, day_num)
-            dim       = False
-
-        key      = cell_date.strftime("%Y-%m-%d")
-        is_today = (cell_date.date() == today.date())
-        day_evs  = event_map.get(key, [])
-        css_cls  = "cal-cell" + (" dim" if dim else "") + (" today" if is_today else "")
-        pills    = "".join(f'<div class="cal-pill">{ev}</div>' for ev in day_evs[:2])
-        html    += f'<div class="{css_cls}"><div class="cal-date">{day_num}</div>{pills}</div>'
-
-    html += "</div>"
-    return html
-
-def render_kanban_html(complaints, pending):
-    tasks = derive_tasks(complaints, pending)
-    cols  = [
-        ("review",    "In Review", "#55e6ff"),
-        ("waiting",   "Waiting",   "#ffca63"),
-        ("escalated", "Escalated", "#ff6b7d"),
-        ("resolved",  "Resolved",  "#4fffb0"),
-    ]
-    html = '<div class="kanban-grid">'
-    for key, label, color in cols:
-        items = [t for t in tasks if t["col"] == key]
-        cards = "".join(
-            f'<div class="task-card">'
-            f'<div class="task-title">{t["title"]}</div>'
-            f'<div class="task-sub">{t["id"]}</div>'
-            f'<div class="task-sub">{t["detail"]}</div></div>'
-            for t in items
-        ) or '<div style="color:#93a6c8;font-size:.8rem;">No items</div>'
-        html += (
-            f'<div class="kan-col">'
-            f'<div class="kan-head"><span style="color:{color};">{label}</span><span>{len(items)}</span></div>'
-            f'{cards}</div>'
-        )
-    html += '</div>'
-    return html
+    return "".join(out)
 
 def render_chat_html():
-    html = ""
-    for msg in st.session_state.chat_messages[-20:]:
-        if msg["type"] == "user":
-            html += f'<div class="chat-msg-user">{msg["text"]}</div>'
-        elif msg["type"] == "bot":
-            html += f'<div class="chat-msg-bot">{msg["text"]}</div>'
+    rows = st.session_state.chat_messages or [{"kind": "sys", "text": "Assistant ready."}]
+    out = []
+    for row in rows[-12:]:
+        kind = row.get("kind", "bot")
+        klass = "chat-msg-bot"
+        if kind == "user":
+            klass = "chat-msg-user"
+        elif kind == "sys":
+            klass = "chat-msg-sys"
+        out.append(f'<div class="{klass}">{esc(row.get("text",""))}</div>')
+    return "".join(out)
+
+def render_bars_html(data):
+    vals = list(data.values()) or [1]
+    max_v = max(vals) if vals else 1
+    fills = [
+        "linear-gradient(90deg,#5d85ff,#7ca4ff)",
+        "linear-gradient(90deg,#55e6ff,#80f1ff)",
+        "linear-gradient(90deg,#4fffb0,#7effc9)",
+        "linear-gradient(90deg,#ca6dff,#e19bff)",
+        "linear-gradient(90deg,#ff9f66,#ffbe8f)",
+        "linear-gradient(90deg,#ffd166,#ffe39a)",
+    ]
+    rows = []
+    for i, (label, value) in enumerate(data.items()):
+        width = max(8, int((value / max_v) * 100)) if max_v else 0
+        rows.append(
+            f'''
+            <div class="bar-row">
+              <div class="bar-label">{esc(label)}</div>
+              <div class="bar-track"><div class="bar-fill" style="width:{width}%;background:{fills[i % len(fills)]};"></div></div>
+              <div class="bar-value">{esc(value)}</div>
+            </div>
+            '''
+        )
+    return "".join(rows)
+
+def render_donut_html(data):
+    total = sum(data.values()) or 1
+    radius = 72
+    stroke = 18
+    circumference = 2 * math.pi * radius
+    colors = ["#5d85ff", "#55e6ff", "#4fffb0", "#ca6dff", "#ff9f66", "#ffd166"]
+    acc = 0.0
+    segs = []
+    legend = []
+
+    for i, (label, value) in enumerate(data.items()):
+        frac = value / total
+        dash = frac * circumference
+        gap = circumference - dash
+        color = colors[i % len(colors)]
+        offset = -acc * circumference
+        acc += frac
+        segs.append(
+            f'<circle cx="100" cy="100" r="{radius}" fill="none" stroke="{color}" stroke-width="{stroke}" stroke-dasharray="{dash} {gap}" stroke-dashoffset="{offset}" transform="rotate(-90 100 100)"></circle>'
+        )
+        legend.append(
+            f'<div style="display:flex;align-items:center;justify-content:space-between;margin:8px 0;">'
+            f'<div style="display:flex;align-items:center;gap:8px;color:#dce7f7;font-size:.8rem;">'
+            f'<span style="width:10px;height:10px;border-radius:999px;background:{color};display:inline-block;"></span>{esc(label)}</div>'
+            f'<div style="color:#f5f9ff;font-weight:800;font-size:.8rem;">{value}</div></div>'
+        )
+
+    return f'''
+    <div style="display:grid;grid-template-columns:220px 1fr;gap:10px;align-items:center;">
+      <div style="display:flex;justify-content:center;">
+        <svg width="220" height="220" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="{radius}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="{stroke}"></circle>
+          {''.join(segs)}
+          <text x="100" y="95" text-anchor="middle" fill="#93a6c8" font-size="12" font-weight="700">Total</text>
+          <text x="100" y="118" text-anchor="middle" fill="#f5f9ff" font-size="24" font-weight="800">{total}</text>
+        </svg>
+      </div>
+      <div>{''.join(legend)}</div>
+    </div>
+    '''
+
+def render_calendar_html(items):
+    now = datetime.now()
+    y, m = now.year, now.month
+    cal = cal_mod.Calendar(firstweekday=0)
+    month_days = list(cal.monthdatescalendar(y, m))
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    head = "".join([f'<div class="cal-day-name">{d}</div>' for d in day_names])
+    cells = []
+    for week in month_days:
+        for d in week:
+            cls = "cal-cell"
+            if d.month != m:
+                cls += " dim"
+            if d == now.date():
+                cls += " today"
+            key = d.isoformat()
+            pills = "".join(f'<span class="cal-pill">{esc(x)[:20]}</span>' for x in items.get(key, [])[:3])
+            cells.append(f'<div class="{cls}"><div class="cal-date">{d.day}</div>{pills}</div>')
+    return f'<div class="cal-grid">{head}{"".join(cells)}</div>'
+
+def render_kanban_html(columns):
+    out = ['<div class="kanban-grid">']
+    for col_name, items in columns.items():
+        out.append(f'<div class="kan-col"><div class="kan-head"><span>{esc(col_name)}</span><span>{len(items)}</span></div>')
+        for item in items:
+            out.append(
+                f'''
+                <div class="task-card">
+                  <div class="task-title">{esc(item["title"])}</div>
+                  <div class="task-sub">{esc(item["sub"])}</div>
+                </div>
+                '''
+            )
+        out.append('</div>')
+    out.append('</div>')
+    return "".join(out)
+
+def reset_session():
+    st.session_state.chat_messages = [{"kind": "sys", "text": "ResolveX Assistant reset."}]
+    st.session_state.trace_lines = [{"text": "System reset.", "status": "OK"}]
+    st.session_state.activity_feed = [{"text": "Dashboard reset.", "ts": datetime.now().strftime("%H:%M:%S")}]
+    st.session_state.last_product = None
+    st.session_state.complaint_text = ""
+    st.session_state.sample_choice = "Custom..."
+    st.session_state.rx_chat_textarea = ""
+    st.session_state.tool_panels = {
+        "notes": "No notes yet.",
+        "tasks": "No tasks yet.",
+        "manufacturer": "No manufacturer activity yet.",
+        "tracker": "No tracker output yet.",
+        "calendar": "No calendar items yet.",
+    }
+    st.session_state.system_status = {
+        "listener": {"state": "pending", "desc": "Awaiting complaint input."},
+        "analyst": {"state": "pending", "desc": "Awaiting complaint analysis."},
+        "decision": {"state": "pending", "desc": "Awaiting routing decision."},
+        "manufacturer": {"state": "pending", "desc": "No manufacturer escalation yet."},
+        "tracker": {"state": "pending", "desc": "No follow-up triggered yet."},
+        "database": {"state": "pending", "desc": "Waiting to log case data."},
+    }
+
+def do_submit_complaint(text):
+    append_chat("user", text)
+    append_chat("sys", "Submitting complaint...")
+    push_trace("[COMPLAINT_ANALYSIS] Analyzing text sentiment...", "RUN")
+    push_activity("Complaint submitted")
+    set_status("listener", "running", "Understanding complaint...")
+
+    ok, res = api_post("/complaint", {"complaint": text})
+
+    if ok:
+        result_blob = safe_json(res, {})
+        set_status("listener", "done", "Complaint parsed successfully.")
+        set_status("analyst", "done", "Issue severity and eligibility evaluated.")
+        set_status("decision", "done", "Decision generated.")
+        set_status("database", "done", "Complaint stored successfully.")
+
+        summary_text = (
+            result_blob.get("message")
+            or result_blob.get("summary")
+            or result_blob.get("resolution_message")
+            or "Complaint processed successfully."
+        )
+        append_chat("bot", summary_text)
+        push_trace("[RESOLUTION_AGENT] Proposed resolution successfully.", "OK")
+        push_activity("Case updated by backend")
+
+        prod = result_blob.get("product_name") or result_blob.get("product") or result_blob.get("order_id")
+        if prod:
+            st.session_state.last_product = prod
+
+        if result_blob.get("manufacturer_contacted") or result_blob.get("escalated"):
+            set_status("manufacturer", "running", "Escalation sent to manufacturer.")
+            set_tool("manufacturer", json.dumps(result_blob, indent=2)[:600])
         else:
-            html += f'<div class="chat-msg-sys">{msg["text"]}</div>'
-    return html
+            set_status("manufacturer", "pending", "No escalation required.")
 
-# ── Optional panel loader ────────────────────────────────────────────────────
-
-def _load_optional_panels(complaints, pending):
-    ok, data = api_get("/notes/recent")
-    if ok:
-        set_tool("notes", json.dumps(data, indent=2)[:400])
-        set_status("notes", "done", "Notes loaded from backend.")
+        set_tool("notes", json.dumps(result_blob, indent=2)[:600])
+        set_tool("tasks", "Task board will refresh from backend data after reload.")
+        st.cache_data.clear()
     else:
-        set_tool("notes", derive_notes(complaints), "Derived")
-        set_status("notes", "done", "Notes derived from complaints.")
+        set_status("listener", "error", "Failed to connect to API.")
+        append_chat("bot", f"API error: {res.get('error', 'Unknown error')}")
+        push_trace("[COMPLAINT_ANALYSIS] Complaint submission failed.", "ERR")
 
-    ok, data = api_get("/tasks/open-summary")
-    if ok:
-        set_tool("tasks", json.dumps(data, indent=2)[:400])
-        set_status("tasks", "done", "Tasks loaded from backend.")
-    else:
-        derived = "\n".join(f"{t['title']} — {t['detail']}" for t in derive_tasks(complaints, pending)[:6])
-        set_tool("tasks", derived or "No tasks yet.", "Derived")
-        set_status("tasks", "done", "Tasks derived from complaints.")
-
-    ok, data = api_get("/calendar/summary")
-    if ok:
-        set_tool("calendar", json.dumps(data, indent=2)[:400])
-        set_status("calendar", "done", "Calendar loaded from backend.")
-    else:
-        evs = derive_calendar_events(complaints, pending)[:6]
-        set_tool("calendar",
-                 "\n".join(f"{e['date'].strftime('%Y-%m-%d')} — {e['label']}" for e in evs) or "No upcoming events.",
-                 "Derived")
-        set_status("calendar", "done", "Calendar derived from complaints.")
-
-    ok, data = api_get("/manufacturer/pending")
-    if ok:
-        raw = data.get("pending") or data.get("pending_contacts") or data.get("data") or []
-        if raw:
-            set_tool("manufacturer", json.dumps(raw[:2], indent=2)[:500])
-            set_status("manufacturer", "done", "Manufacturer data loaded.")
+def run_tracker_action():
+    prod = st.session_state.last_product
+    if prod:
+        push_trace(f"[TRACKER_AGENT] Running tracker for {prod}...", "RUN")
+        push_activity(f"Tracker started for {prod}")
+        set_status("tracker", "running", f"Running tracker for {prod}...")
+        ok, res = api_post("/tracker/run", {"product_name": prod})
+        if ok and safe_json(res, {}).get("success", True):
+            set_status("tracker", "done", "Tracker executed successfully.")
+            set_tool("tracker", json.dumps(res, indent=2)[:700])
+            append_chat("sys", f"Tracker ran for {prod}.")
+            push_trace(f"[TRACKER_AGENT] Tracker completed for {prod}.", "OK")
         else:
-            set_tool("manufacturer", "No pending manufacturer escalations.")
-            set_status("manufacturer", "done", "No pending escalations.")
+            set_status("tracker", "error", "Tracker failed.")
+            push_trace(f"[TRACKER_AGENT] Tracker failed for {prod}.", "ERR")
+        st.cache_data.clear()
     else:
-        set_tool("manufacturer", "Manufacturer endpoint unavailable.", "Unavailable")
-        set_status("manufacturer", "error", "Manufacturer endpoint unavailable.")
+        append_chat("sys", "Submit a complaint first so the tracker knows which product to follow.")
 
-# ── Submit complaint ─────────────────────────────────────────────────────────
-
-def do_submit_complaint(complaint_text, complaints, pending):
-    append_chat("user", complaint_text)
-    push_trace("Complaint received in customer portal", "OK")
-    push_trace("Listener agent extracting fields", "RUN")
-    push_activity("Complaint submitted from customer portal")
-    set_status("listener", "running", "Parsing complaint text...")
-    set_status("analyst",  "pending", "Waiting for eligibility check.")
-    set_status("decision", "pending", "Waiting for resolution selection.")
-    set_status("database", "pending", "Waiting for case log.")
-    set_status("customer", "pending", "Waiting for final response.")
-
-    ok, body = api_post("/complaint", {"complaint": complaint_text})
-
-    if not (ok and body.get("success")):
-        set_status("listener", "error", "Complaint submission failed.")
-        set_status("customer", "error", "No final response returned.")
-        err = body.get("detail") or body.get("error") or "Unknown error"
-        append_chat("sys", f"Submission failed: {err}")
-        push_trace("Complaint submission failed", "ERR")
-        push_activity("Complaint submission failed")
-        return
-
-    customer     = body.get("customer_response", {})
-    steps_done   = body.get("steps_completed", [])
-    decision     = customer.get("decision", "unknown")
-    eta          = customer.get("estimated_resolution_days", "unknown")
-    complaint_id = body.get("complaint_id")
-
-    st.session_state.last_complaint_id = complaint_id
-
-    set_status("listener", "done", "Complaint parsed successfully.")
-    push_trace("Listener extraction completed", "OK")
-    push_trace("Analyzer agent checking eligibility", "RUN")
-    push_activity("Listener agent completed extraction")
-
-    set_status("analyst", "done" if "analyst" in steps_done else "running", "Eligibility review completed.")
-    push_trace("Eligibility review completed", "OK")
-    push_trace(f"Decision selected: {decision}", "OK")
-    push_activity("Analyzer agent completed review")
-
-    set_status("decision", "done" if "decision" in steps_done else "running",
-               f"Decision: {decision}. ETA: {eta} day(s).")
-    push_trace("Database updating case", "RUN")
-    push_activity(f"Decision selected: {decision}")
-
-    if complaint_id:
-        set_status("database", "done", f"Complaint logged with ID {str(complaint_id)[:8]}…")
-        push_trace(f"Database updated for complaint {str(complaint_id)[:8]}", "OK")
-        push_activity(f"Complaint logged with ID {str(complaint_id)[:8]}")
+def run_learning_action():
+    append_chat("sys", "Running learning agent...")
+    push_trace("[LEARNING_AGENT] Analyzing patterns...", "RUN")
+    push_activity("Learning agent started")
+    ok, res = api_post("/learning/run", {})
+    if ok and safe_json(res, {}).get("success", True):
+        append_chat("sys", "Learning agent finished successfully.")
+        push_trace("[LEARNING_AGENT] Learning completed.", "OK")
     else:
-        set_status("database", "error", "Complaint ID missing from backend response.")
-        push_trace("Complaint ID missing from backend response", "ERR")
+        append_chat("sys", "Learning endpoint unavailable or failed.")
+        push_trace("[LEARNING_AGENT] Endpoint unavailable.", "ERR")
 
-    set_status("customer", "done", "Customer response returned.")
-    if customer.get("acknowledgement"): append_chat("bot", customer["acknowledgement"])
-    if customer.get("resolution"):      append_chat("bot", customer["resolution"])
-    if steps_done: append_chat("sys", "Completed stages: " + ", ".join(steps_done))
+def on_sample_change():
+    selected_now = st.session_state.rx_chat_sample_select
+    st.session_state.sample_choice = selected_now
+    if selected_now == "Custom...":
+        st.session_state.rx_chat_textarea = ""
+        st.session_state.complaint_text = ""
+    else:
+        st.session_state.rx_chat_textarea = selected_now
+        st.session_state.complaint_text = selected_now
 
-    push_trace("Customer response returned to chat", "OK")
-    push_activity("Customer-facing response returned")
+# ── SESSION STATE ───────────────────────────────────────────────────────────
 
-    try:
-        fresh = fetch_complaints.__wrapped__()
-    except Exception:
-        fresh = complaints
-    found = next((c for c in fresh if c.get("complaint_id") == complaint_id), None)
-    if found:
-        st.session_state.last_product = found.get("product_name")
+if "chat_messages" not in st.session_state:
+    reset_session()
 
-    _load_optional_panels(fresh, pending)
+if "chat_open" not in st.session_state:
+    st.session_state.chat_open = False
 
-    if st.session_state.last_product:
-        set_status("tracker", "pending", f"Tracker ready for {st.session_state.last_product}.")
-        set_tool("tracker", f"Tracker ready for: {st.session_state.last_product}\nUse 'Run Tracker' to execute follow-up.")
+if "rx_chat_textarea" not in st.session_state:
+    st.session_state.rx_chat_textarea = st.session_state.get("complaint_text", "")
 
-    st.cache_data.clear()
+# ── LOAD DATA ────────────────────────────────────────────────────────────────
 
-# ── Load data ────────────────────────────────────────────────────────────────
+data = fetch_all_data()
+api_ok = data["api_ok"]
+complaints = data["complaints"]
+pending = data["pending"]
+products = data["products"]
+summary = data["summary"]
 
-dashboard  = fetch_dashboard()
-complaints = fetch_complaints()
-products   = fetch_products()
-pending    = fetch_pending()
+total_c, active_cases, resolved_cases, escalated, overdue, manufacturer_cases = infer_counts(
+    complaints, summary, pending
+)
+issue_types = compute_issue_breakdown(complaints)
+resolution = compute_resolution_breakdown(complaints)
+calendar_items = build_calendar_items(complaints)
+kanban_cols = build_kanban(complaints)
 
-summary     = dashboard.get("summary", {})
-resolution  = dashboard.get("resolution_breakdown", {})
-issue_types = dashboard.get("issue_breakdown", {})
-total_c     = summary.get("total_complaints", len(complaints))
-escalated   = resolution.get("escalate", 0)
-
-def _is_overdue(c):
-    try:
-        eta = c.get("estimated_resolution_days")
-        cr  = c.get("created_at")
-        if not eta or not cr or c.get("loop_closed_at"):
-            return False
-        created = datetime.fromisoformat(str(cr).replace("Z", "+00:00"))
-        due     = created + timedelta(days=int(eta))
-        now     = datetime.now(due.tzinfo)
-        return now > due
-    except Exception:
-        return False
-
-overdue = sum(1 for c in complaints if _is_overdue(c))
-api_ok  = check_api()
+st.session_state.tool_panels["calendar"] = f"{len(calendar_items)} scheduled day(s) with follow-ups or ETA items."
 
 # ── SIDEBAR ──────────────────────────────────────────────────────────────────
 
@@ -808,324 +1280,332 @@ with st.sidebar:
 
     color_api = "#4fffb0" if api_ok else "#ff6b7d"
     label_api = "API Connected" if api_ok else "API Disconnected"
-    st.markdown(f'<div style="font-weight:700;font-size:.85rem;color:{color_api};margin-bottom:4px;">● {label_api}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="font-weight:700;font-size:.85rem;color:{color_api};margin-bottom:4px;">● {label_api}</div>',
+        unsafe_allow_html=True
+    )
     st.caption(f"→ {API_BASE}")
 
     st.markdown('<div class="side-label" style="margin-top:14px;">Navigation</div>', unsafe_allow_html=True)
-    page = st.radio("nav", ["🏠  Overview","⚙️  Operations","📋  Complaints","📦  Products"], label_visibility="collapsed")
 
-    st.markdown('<hr style="margin:14px 0;">', unsafe_allow_html=True)
-
-    # ── CHAT WIDGET ──────────────────────────────────────────────────────────
-    st.markdown("""
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-      <div style="width:8px;height:8px;border-radius:999px;background:#55e6ff;box-shadow:0 0 8px #55e6ff;"></div>
-      <span style="font-weight:800;font-size:.9rem;color:#f5f9ff;">ResolveX Assistant</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    chat_html = render_chat_html()
-    st.markdown(f"""
-    <div style="max-height:260px;overflow-y:auto;margin-bottom:10px;
-                background:rgba(6,10,18,.5);border-radius:14px;
-                border:1px solid rgba(255,255,255,.06);padding:10px;">
-      {chat_html}
-    </div>
-    """, unsafe_allow_html=True)
-
-    samples = [
-        "Custom...",
-        "My Voltix Charger overheats after five minutes and stopped working. Order ORD001.",
-        "I received the wrong AeroBuds Pro color and the box was already damaged. Order ORD003.",
-        "The Nova Blender has a broken motor and makes a burning smell after two uses. Order ORD002.",
-        "My headphones stopped charging after only 2 weeks. Very frustrated. Order ORD003.",
-    ]
-    selected     = st.selectbox("Sample complaint", samples, label_visibility="collapsed", key="sample_select")
-    default_text = "" if selected == "Custom..." else selected
-
-    complaint_input = st.text_area(
-        "Complaint", value=default_text, height=90,
-        placeholder="Describe your issue here...",
-        label_visibility="collapsed", key="complaint_input_sidebar"
+    page = st.radio(
+        "nav",
+        ["Overview", "Operations", "Complaints", "Products"],
+        label_visibility="collapsed",
+        key="sidebar_nav"
     )
 
-    col_send, col_reset = st.columns(2)
-    with col_send:
-        if st.button("Send", use_container_width=True, key="send_btn"):
-            if complaint_input and len(complaint_input.strip()) >= 10:
-                do_submit_complaint(complaint_input.strip(), complaints, pending)
-                st.rerun()
-            else:
-                st.warning("Enter at least 10 characters.")
-    with col_reset:
-        if st.button("Reset", use_container_width=True, key="reset_btn"):
-            reset_session(); st.rerun()
-
-    col_trk, col_lrn = st.columns(2)
-    with col_trk:
-        if st.button("Tracker", use_container_width=True, key="tracker_btn"):
-            prod = st.session_state.last_product
-            if prod:
-                push_trace(f"Running tracker for {prod}", "RUN")
-                push_activity(f"Tracker started for {prod}")
-                set_status("tracker", "running", f"Running tracker for {prod}...")
-                ok, res = api_post("/tracker/run", {"product_name": prod})
-                if ok and res.get("success"):
-                    set_status("tracker", "done", "Tracker executed successfully.")
-                    set_tool("tracker", json.dumps(res.get("result", {}), indent=2)[:500])
-                    append_chat("sys", f"Tracker ran for {prod}.")
-                    push_trace(f"Tracker completed for {prod}", "OK")
-                else:
-                    set_status("tracker", "error", "Tracker failed.")
-                    push_trace(f"Tracker failed for {prod}", "ERR")
-                st.cache_data.clear(); st.rerun()
-            else:
-                append_chat("sys", "Submit a complaint first so the tracker knows which product to follow.")
-                st.rerun()
-    with col_lrn:
-        if st.button("Learning", use_container_width=True, key="learning_btn"):
-            append_chat("sys", "Running learning agent...")
-            push_trace("Learning agent triggered", "RUN")
-            push_activity("Learning agent started")
-            ok, res = api_post("/learning/run", {})
-            if ok and res.get("success"):
-                append_chat("sys", "Learning agent finished successfully.")
-                push_trace("Learning agent completed", "OK")
-            else:
-                append_chat("sys", "Learning endpoint unavailable or failed.")
-                push_trace("Learning endpoint unavailable", "ERR")
-            st.rerun()
-
-    st.markdown('<hr style="margin:12px 0;">', unsafe_allow_html=True)
+    st.markdown('<hr style="margin:14px 0;">', unsafe_allow_html=True)
 
     if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_btn"):
         st.cache_data.clear()
         push_activity("Dashboard refreshed")
         st.rerun()
 
+    if st.button("🧹 Reset Session", use_container_width=True, key="reset_btn_sidebar"):
+        reset_session()
+        st.cache_data.clear()
+        st.rerun()
+
     st.markdown("""
-    <div style="margin-top:8px;padding:12px;border-radius:14px;border:1px solid rgba(108,140,220,.14);
-                background:rgba(19,28,48,.72);font-size:.76rem;color:#93a6c8;line-height:1.5;">
-      Multi-agent complaint understanding, decisioning, escalation, follow-up tracking, calendar and task board.
+    <div style="margin-top:8px;padding:12px;border-radius:16px;
+                border:1px solid rgba(255,255,255,.06);
+                background:linear-gradient(180deg, rgba(28,36,51,.88), rgba(20,27,39,.92));
+                font-size:.78rem;color:#93a6c8;line-height:1.6;">
+      Multi-agent complaint understanding, decisioning, escalation, and follow-up activity in one command center.
     </div>
     """, unsafe_allow_html=True)
 
-# ── MAIN HEADER ──────────────────────────────────────────────────────────────
+# ── HEADER ───────────────────────────────────────────────────────────────────
 
-st.markdown("""
-<div style="margin-bottom:6px;">
-  <h1 style="margin:0;font-size:1.85rem;font-weight:800;letter-spacing:-.05em;color:#f5f9ff;">
-    ResolveX — Autonomous Customer Resolution System
+st.markdown(f"""
+<div style="margin-bottom:10px;">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+    <div style="width:10px;height:10px;border-radius:999px;background:#9dff8a;box-shadow:0 0 12px #9dff8a;"></div>
+    <div style="font-size:.78rem;font-weight:800;letter-spacing:.16em;color:#8fa3c7;text-transform:uppercase;">
+      ResolveX Command Center
+    </div>
+  </div>
+
+  <h1 style="margin:0;font-size:2.1rem;font-weight:800;letter-spacing:-.05em;color:#f5f9ff;line-height:1.1;">
+    Autonomous Customer Resolution Dashboard
   </h1>
-  <p style="margin:8px 0 0;color:#c6d6ee;line-height:1.6;font-size:.94rem;">
-    From complaint to closure — understanding issues, evaluating eligibility, coordinating actions,
-    escalating manufacturers, and tracking cases until resolution.
+
+  <p style="margin:10px 0 0;color:#c6d6ee;line-height:1.65;font-size:.95rem;max-width:980px;">
+    Monitor complaints, resolution decisions, escalations, product issues, and live follow-up activity in one place.
   </p>
+
+  <div style="margin-top:12px;color:#8da2c6;font-size:.82rem;font-weight:700;">
+    Updated live • {now_label()}
+  </div>
 </div>
 """, unsafe_allow_html=True)
-st.caption(f"Last updated: {datetime.now().strftime('%B %d, %Y  %H:%M:%S')}")
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# ════════════════════════════════════════════════════════════════════════════
-# PAGE: OVERVIEW
-# ════════════════════════════════════════════════════════════════════════════
+# ── FLOATING CHAT BUTTON ─────────────────────────────────────────────────────
 
-if page == "🏠  Overview":
+fab_wrap = st.container(key="rx_chat_fab")
+with fab_wrap:
+    if st.button("", key="rx_chat_fab_btn"):
+        st.session_state.chat_open = not st.session_state.chat_open
+        st.rerun()
 
-    c1,c2,c3,c4,c5,c6 = st.columns(6)
-    c1.metric("Total Complaints",   total_c)
-    c2.metric("Active Cases",       sum(1 for c in complaints if not c.get("loop_closed_at")))
-    c3.metric("Resolved",           sum(1 for c in complaints if c.get("loop_closed_at") or c.get("resolution")))
-    c4.metric("Escalated",          escalated)
-    c5.metric("Manufacturer Cases", len(pending) or summary.get("manufacturer_contacted", 0))
-    c6.metric("SLA Overdue",        overdue)
+# ── FLOATING CHAT PANEL ──────────────────────────────────────────────────────
+
+if st.session_state.chat_open:
+    panel = st.container(key="rx_chat_panel")
+    with panel:
+        header_cols = st.columns([10, 1])
+        with header_cols[0]:
+            st.markdown("""
+            <div class="rx-chat-shell">
+              <div class="rx-chat-header">
+                <div class="rx-chat-header-left">
+                  <div class="rx-chat-header-dot"></div>
+                  <div class="rx-chat-header-title">ResolveX Assistant</div>
+                </div>
+              </div>
+            """, unsafe_allow_html=True)
+
+        with header_cols[1]:
+            close_wrap = st.container(key="rx_chat_close")
+            with close_wrap:
+                if st.button("✕", key="rx_chat_close_btn"):
+                    st.session_state.chat_open = False
+                    st.rerun()
+
+        st.markdown('<div class="rx-chat-messages">', unsafe_allow_html=True)
+        st.markdown(render_chat_html(), unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="rx-chat-form">', unsafe_allow_html=True)
+        st.markdown('<div class="rx-chat-sample-note">Quick samples</div>', unsafe_allow_html=True)
+
+        samples = [
+            "Custom...",
+            "My Voltix Charger overheats after five minutes and stopped working. Order ORD001.",
+            "I received the wrong AeroBuds Pro color and the box was already damaged. Order ORD003.",
+            "The Nova Blender has a broken motor and makes a burning smell after two uses. Order ORD002.",
+            "My headphones stopped charging after only 2 weeks. Very frustrated. Order ORD003.",
+        ]
+
+        sample_index = samples.index(st.session_state.sample_choice) if st.session_state.sample_choice in samples else 0
+
+        st.selectbox(
+            "Sample complaint",
+            samples,
+            index=sample_index,
+            label_visibility="collapsed",
+            key="rx_chat_sample_select",
+            on_change=on_sample_change
+        )
+
+        complaint_input = st.text_area(
+            "Complaint",
+            height=110,
+            placeholder="Describe your issue here...",
+            label_visibility="collapsed",
+            key="rx_chat_textarea"
+        )
+
+        st.session_state.complaint_text = complaint_input
+
+        row1_col1, row1_col2 = st.columns(2)
+        with row1_col1:
+            if st.button("Send", use_container_width=True, key="rx_chat_send_btn"):
+                text_to_send = st.session_state.rx_chat_textarea.strip()
+                if text_to_send and len(text_to_send) >= 10:
+                    st.session_state.complaint_text = text_to_send
+                    do_submit_complaint(text_to_send)
+                    st.session_state.chat_open = True
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.warning("Enter at least 10 characters.")
+
+        with row1_col2:
+            if st.button("Reset", use_container_width=True, key="rx_chat_reset_btn"):
+                reset_session()
+                st.session_state.chat_open = True
+                st.session_state.sample_choice = "Custom..."
+                st.session_state.rx_chat_sample_select = "Custom..."
+                st.session_state.rx_chat_textarea = ""
+                st.rerun()
+
+        row2_col1, row2_col2 = st.columns(2)
+        with row2_col1:
+            if st.button("Tracker", use_container_width=True, key="rx_chat_tracker_btn"):
+                run_tracker_action()
+                st.session_state.chat_open = True
+                st.rerun()
+
+        with row2_col2:
+            if st.button("Learning", use_container_width=True, key="rx_chat_learning_btn"):
+                run_learning_action()
+                st.session_state.chat_open = True
+                st.rerun()
+
+        st.markdown('</div></div>', unsafe_allow_html=True)
+
+# ── PAGE: OVERVIEW ───────────────────────────────────────────────────────────
+
+if page == "Overview":
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("Total Complaints", total_c)
+    c2.metric("Active Cases", active_cases)
+    c3.metric("Resolved", resolved_cases)
+    c4.metric("Escalated", escalated)
+    c5.metric("Manufacturer Cases", manufacturer_cases)
+    c6.metric("SLA Overdue", overdue)
 
     st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
 
     col_l, col_r = st.columns(2)
     with col_l:
-        st.markdown('<div class="rx-card"><div class="rx-card-title">AI Thought Trace</div><div class="rx-card-desc">Readable multi-agent workflow progression.</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card glow-green"><div class="rx-card-title">AI Thought Trace</div><div class="rx-card-desc">Readable multi-agent workflow progression.</div>',
+            unsafe_allow_html=True
+        )
         st.markdown(render_trace_html(), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
     with col_r:
-        st.markdown('<div class="rx-card"><div class="rx-card-title">Live Activity Feed</div><div class="rx-card-desc">Recent operational events and updates.</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card glow-blue"><div class="rx-card-title">Live Activity Feed</div><div class="rx-card-desc">Recent operational events and updates.</div>',
+            unsafe_allow_html=True
+        )
         st.markdown(render_activity_html(), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    col_l2, col_r2 = st.columns(2)
+    col_l2, col_r2 = st.columns([1.2, 1])
     with col_l2:
-        st.markdown('<div class="rx-card"><div class="rx-card-title">Resolution Breakdown</div><div class="rx-card-desc">Outcome distribution across complaints.</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card"><div class="rx-card-title">Resolution Breakdown</div><div class="rx-card-desc">Outcome distribution across complaints.</div>',
+            unsafe_allow_html=True
+        )
         st.markdown(render_bars_html(resolution), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
     with col_r2:
-        st.markdown('<div class="rx-card"><div class="rx-card-title">Issue Type Distribution</div><div class="rx-card-desc">Current complaint category mix.</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card"><div class="rx-card-title">Issue Type Distribution</div><div class="rx-card-desc">Current complaint category mix.</div>',
+            unsafe_allow_html=True
+        )
         st.markdown(render_donut_html(issue_types), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-# ════════════════════════════════════════════════════════════════════════════
-# PAGE: OPERATIONS
-# ════════════════════════════════════════════════════════════════════════════
+# ── PAGE: OPERATIONS ─────────────────────────────────────────────────────────
 
-elif page == "⚙️  Operations":
-
+elif page == "Operations":
     col_l, col_r = st.columns([1, 1.1])
+
     with col_l:
-        st.markdown('<div class="rx-card"><div class="rx-card-title">System Status</div><div class="rx-card-desc">Real subsystem states during execution.</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card"><div class="rx-card-title">System Status</div><div class="rx-card-desc">Real subsystem states during execution.</div>',
+            unsafe_allow_html=True
+        )
         st.markdown(render_status_html(), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
     with col_r:
-        st.markdown('<div class="rx-card"><div class="rx-card-title">Operational Panels</div><div class="rx-card-desc">Notes, tasks, calendar, manufacturer, and tracker output.</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card"><div class="rx-card-title">Operational Panels</div><div class="rx-card-desc">Notes, tasks, calendar, manufacturer, and tracker output.</div>',
+            unsafe_allow_html=True
+        )
         st.markdown(render_tools_html(), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    col_l2, col_r2 = st.columns(2)
-    with col_l2:
-        st.markdown('<div class="rx-card"><div class="rx-card-title">Calendar</div><div class="rx-card-desc">Estimated due dates and follow-ups.</div>', unsafe_allow_html=True)
-        st.markdown(render_calendar_html(complaints, pending), unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-    with col_r2:
-        st.markdown('<div class="rx-card"><div class="rx-card-title">Task Board</div><div class="rx-card-desc">Derived from current case state.</div>', unsafe_allow_html=True)
-        st.markdown(render_kanban_html(complaints, pending), unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="rx-card"><div class="rx-card-title">Monthly Calendar</div><div class="rx-card-desc">ETA and follow-up visibility for this month.</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(render_calendar_html(calendar_items), unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='margin-top:4px;'></div>", unsafe_allow_html=True)
-    with st.expander("⚙️ Manual Agent Triggers"):
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Run Tracker Agent**")
-            tracker_products = [p.get("product_name") for p in products
-                                if p.get("manufacturer_contacted") and not p.get("manufacturer_resolved")]
-            if tracker_products:
-                sel = st.selectbox("Product to track:", tracker_products, key="ops_tracker_select")
-                if st.button("▶ Run Tracker", key="ops_run_tracker"):
-                    with st.spinner(f"Tracking {sel}..."):
-                        ok, res = api_post("/tracker/run", {"product_name": sel})
-                    if ok and res.get("success"):
-                        st.success(f"Tracker completed for {sel}")
-                        push_trace(f"Tracker completed for {sel}", "OK")
-                        push_activity(f"Tracker completed for {sel}")
-                        set_status("tracker", "done", f"Tracker completed for {sel}.")
-                        set_tool("tracker", json.dumps(res.get("result",{}), indent=2)[:500])
-                        st.cache_data.clear(); st.rerun()
-                    else:
-                        st.error(f"Failed: {res.get('error')}")
-            else:
-                st.info("No products awaiting tracker.")
-        with c2:
-            st.markdown("**Run Learning Agent**")
-            if st.button("▶ Run Learning Agent", key="ops_run_learning"):
-                with st.spinner("Analyzing patterns..."):
-                    ok, res = api_post("/learning/run", {})
-                if ok and res.get("success"):
-                    st.success("Learning agent completed")
-                    push_trace("Learning agent completed", "OK")
-                    push_activity("Learning agent completed")
-                    st.rerun()
-                else:
-                    st.error(f"Failed: {res.get('error')}")
+    st.markdown(
+        '<div class="rx-card"><div class="rx-card-title">Task Board</div><div class="rx-card-desc">Kanban-style complaint flow across stages.</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(render_kanban_html(kanban_cols), unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ════════════════════════════════════════════════════════════════════════════
-# PAGE: COMPLAINTS
-# ════════════════════════════════════════════════════════════════════════════
+# ── PAGE: COMPLAINTS ─────────────────────────────────────────────────────────
 
-elif page == "📋  Complaints":
+elif page == "Complaints":
+    st.markdown(
+        '<div class="rx-card"><div class="rx-card-title">Complaint Cases</div><div class="rx-card-desc">Latest complaint data returned by the API.</div>',
+        unsafe_allow_html=True
+    )
 
-    st.markdown('<div class="rx-card"><div class="rx-card-title">Complaints</div><div class="rx-card-desc">Filter complaints by product, issue, urgency, and resolution.</div></div>', unsafe_allow_html=True)
-
-    if not complaints:
-        st.info("No complaints logged yet.")
+    if complaints:
+        rows = []
+        for c in complaints:
+            rows.append({
+                "Order ID": c.get("order_id"),
+                "Product": c.get("product_name") or c.get("product"),
+                "Issue Type": c.get("issue_type") or c.get("category"),
+                "Status": c.get("status") or c.get("resolution"),
+                "Decision": c.get("decision"),
+                "Escalated": c.get("escalated") or c.get("manufacturer_contacted"),
+                "ETA": c.get("eta") or c.get("follow_up_date") or c.get("due_date"),
+                "Summary": c.get("summary") or c.get("complaint"),
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     else:
-        df = pd.DataFrame(complaints)
+        st.info("No complaints returned yet.")
 
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            prods = ["All"] + sorted(df["product_name"].dropna().unique().tolist()) if "product_name" in df.columns else ["All"]
-            pf = st.selectbox("Product", prods, key="cp_prod")
-        with c2:
-            ress = ["All"] + sorted(df["resolution"].dropna().unique().tolist()) if "resolution" in df.columns else ["All"]
-            rf = st.selectbox("Resolution", ress, key="cp_res")
-        with c3:
-            uf = st.selectbox("Urgency", ["All","high","medium","low"], key="cp_urg")
-        with c4:
-            issues = ["All"] + sorted(df["issue_type"].dropna().unique().tolist()) if "issue_type" in df.columns else ["All"]
-            isf = st.selectbox("Issue Type", issues, key="cp_issue")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        if pf  != "All" and "product_name"  in df.columns: df = df[df["product_name"]  == pf]
-        if rf  != "All" and "resolution"    in df.columns: df = df[df["resolution"]    == rf]
-        if uf  != "All" and "urgency_level" in df.columns: df = df[df["urgency_level"] == uf]
-        if isf != "All" and "issue_type"    in df.columns: df = df[df["issue_type"]    == isf]
-
-        if "created_at" in df.columns:
-            df = df.sort_values("created_at", ascending=False)
-
-        display_cols = ["complaint_id","product_name","issue_type","urgency_level",
-                        "customer_emotion","resolution","priority","estimated_resolution_days","created_at"]
-        existing = [c for c in display_cols if c in df.columns]
-
-        st.dataframe(
-            df[existing].rename(columns={
-                "complaint_id":"ID","product_name":"Product","issue_type":"Issue",
-                "urgency_level":"Urgency","customer_emotion":"Emotion","resolution":"Resolution",
-                "priority":"Priority","estimated_resolution_days":"ETA (days)","created_at":"Created"
-            }),
-            use_container_width=True, hide_index=True,
+    if pending:
+        st.markdown(
+            '<div class="rx-card"><div class="rx-card-title">Pending Manufacturer Cases</div><div class="rx-card-desc">Cases waiting on external manufacturer action.</div>',
+            unsafe_allow_html=True
         )
-        st.caption(f"Showing {len(df)} of {len(complaints)} complaints")
+        p_rows = []
+        for p in pending:
+            p_rows.append({
+                "Product": p.get("product_name") or p.get("product"),
+                "Order ID": p.get("order_id"),
+                "Status": p.get("status"),
+                "Reason": p.get("reason") or p.get("issue_type"),
+                "ETA": p.get("eta") or p.get("follow_up_date"),
+            })
+        st.dataframe(pd.DataFrame(p_rows), use_container_width=True, hide_index=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-# ════════════════════════════════════════════════════════════════════════════
-# PAGE: PRODUCTS
-# ════════════════════════════════════════════════════════════════════════════
+# ── PAGE: PRODUCTS ───────────────────────────────────────────────────────────
 
-elif page == "📦  Products":
-
-    st.markdown('<div class="rx-card"><div class="rx-card-title">Products</div><div class="rx-card-desc">Product-level complaint and escalation monitoring.</div></div>', unsafe_allow_html=True)
+elif page == "Products":
+    st.markdown(
+        '<div class="rx-card"><div class="rx-card-title">Products</div><div class="rx-card-desc">Product catalog or complaint-linked products returned by the API.</div>',
+        unsafe_allow_html=True
+    )
 
     if not products:
-        st.info("No product data yet.")
+        st.info("No products returned from the backend yet.")
     else:
-        for prod in products:
-            name    = prod.get("product_name", "Unknown")
-            total_p = prod.get("total_complaints", 0)
-            cont    = prod.get("manufacturer_contacted", False)
-            res     = prod.get("manufacturer_resolved", False)
-            pattern = prod.get("pattern_detected", False)
-
-            icon   = "✅" if res else ("📨" if cont else ("⚠️" if pattern else "👁️"))
-            status = "Resolved" if res else ("Manufacturer Contacted" if cont else ("Pattern Detected" if pattern else "Monitoring"))
-            sc     = "#4fffb0" if res else ("#ffca63" if cont else ("#ff6b7d" if pattern else "#55e6ff"))
+        for product in products:
+            name = product.get("name") or product.get("product_name") or "Unnamed Product"
+            sku = product.get("sku") or product.get("id") or product.get("product_id") or "-"
+            issues = product.get("issues") or product.get("complaint_count") or 0
+            warranty = product.get("warranty") or product.get("warranty_status") or "-"
+            replacement = product.get("replacement_window") or product.get("replacement_policy") or "-"
 
             st.markdown(f"""
             <div class="product-card">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;">
                 <div>
-                  <div style="font-size:.96rem;font-weight:800;color:#f5f9ff;margin-bottom:4px;">{icon} {name}</div>
-                  <div style="color:#93a6c8;font-size:.8rem;">{status}</div>
+                  <div style="font-size:1rem;font-weight:800;color:#f5f9ff;margin-bottom:6px;">{esc(name)}</div>
+                  <div style="font-size:.78rem;color:#93a6c8;">SKU / ID: {esc(sku)}</div>
                 </div>
-                <span class="rx-pill" style="border-color:{sc}40;color:{sc};">{status}</span>
+                <div class="rx-pill">{esc(product.get("category", "Product"))}</div>
               </div>
-              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
-                <div class="mini-stat"><span>Total Complaints</span><strong>{total_p}</strong></div>
-                <div class="mini-stat"><span>Pattern Detected</span><strong>{"Yes" if pattern else "No"}</strong></div>
-                <div class="mini-stat"><span>Mfr Contacted</span><strong>{"Yes" if cont else "No"}</strong></div>
-                <div class="mini-stat"><span>Mfr Resolved</span><strong>{"Yes" if res else "No"}</strong></div>
-              </div>
-              <div>
-                <span class="rx-pill">Product: {name}</span>
-                <span class="rx-pill">Complaints: {total_p}</span>
-                <span class="rx-pill">Pattern: {"Detected" if pattern else "No"}</span>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px;">
+                <div class="mini-stat"><span>Complaints</span><strong>{esc(issues)}</strong></div>
+                <div class="mini-stat"><span>Warranty</span><strong>{esc(warranty)}</strong></div>
+                <div class="mini-stat"><span>Replacement</span><strong>{esc(replacement)}</strong></div>
               </div>
             </div>
             """, unsafe_allow_html=True)
 
-            if cont and not res:
-                if st.button(f"✅ Mark '{name}' Resolved", key=f"resolve_{name}"):
-                    with st.spinner("Closing loop and notifying customers..."):
-                        ok, result = api_post("/manufacturer/resolve", {"product_name": name})
-                    if ok and result.get("success"):
-                        notified = result.get("result", {}).get("customers_notified", 0)
-                        st.success(f"✅ Resolved! {notified} customer(s) notified.")
-                        push_trace(f"Manufacturer issue resolved for {name}", "OK")
-                        push_activity(f"Manufacturer issue resolved for {name}")
-                        st.cache_data.clear(); st.rerun()
-                    else:
-                        st.error(f"Error: {result.get('error')}")
+    st.markdown("</div>", unsafe_allow_html=True)
