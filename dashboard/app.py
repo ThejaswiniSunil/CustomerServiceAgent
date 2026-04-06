@@ -746,7 +746,72 @@ def pull_list(data, *keys):
         if isinstance(data, dict) and isinstance(data.get(k), list):
             return data.get(k)
     return []
+def latest_case_data():
+    latest_data = fetch_all_data()
+    latest_complaints = latest_data.get("complaints", [])
+    latest_products = latest_data.get("products", [])
 
+    latest_case = latest_complaints[0] if latest_complaints else {}
+    latest_product_stats = {}
+
+    product_name = latest_case.get("product_name") or latest_case.get("product")
+    if product_name and latest_products:
+        for p in latest_products:
+            p_name = p.get("name") or p.get("product_name")
+            if p_name == product_name:
+                latest_product_stats = p
+                break
+
+    return latest_case, latest_product_stats
+
+
+def build_notes_text(case: dict) -> str:
+    if not case:
+        return "No case notes yet."
+
+    product_name = case.get("product_name") or case.get("product") or "Unknown"
+    order_id = case.get("order_id", "Not provided")
+    issue_type = case.get("issue_type") or case.get("category") or "other"
+    summary = case.get("complaint_summary") or case.get("summary") or case.get("complaint") or "No summary available."
+    resolution = case.get("resolution") or case.get("decision") or "Pending"
+    reason = case.get("decision_reason") or "No decision reason available."
+    priority = case.get("priority") or case.get("urgency_level") or "medium"
+    eta = case.get("estimated_resolution_days") or case.get("eta") or "N/A"
+
+    return (
+        f"Product: {product_name}\n"
+        f"Order ID: {order_id}\n"
+        f"Issue Type: {issue_type}\n"
+        f"Priority: {priority}\n"
+        f"Resolution: {resolution}\n"
+        f"ETA: {eta}\n"
+        f"Summary: {summary}\n"
+        f"Reason: {reason}"
+    )
+
+
+def build_tracker_text(result: dict, product_name: str) -> str:
+    if not result:
+        return f"Tracker ran for {product_name}, but no details were returned."
+
+    parsed = safe_json(result, {})
+    status = parsed.get("status") or parsed.get("result", {}).get("status") or "completed"
+    return f"Tracker status: {status}\nProduct: {product_name}"
+
+
+def build_manufacturer_text(case: dict, product_stats: dict) -> str:
+    if not case:
+        return "No manufacturer activity yet."
+
+    product_name = case.get("product_name") or case.get("product") or "Unknown"
+    manufacturer_contacted = case.get("manufacturer_contacted") or product_stats.get("manufacturer_contacted", False)
+    manufacturer_resolved = case.get("manufacturer_resolved") or product_stats.get("manufacturer_resolved", False)
+
+    return (
+        f"Product: {product_name}\n"
+        f"Manufacturer Contacted: {'Yes' if manufacturer_contacted else 'No'}\n"
+        f"Manufacturer Resolved: {'Yes' if manufacturer_resolved else 'No'}"
+    )
 @st.cache_data(ttl=15)
 def fetch_all_data():
     ok_c, c_data = api_get("/complaints")
@@ -1106,34 +1171,44 @@ def render_calendar_html(items):
             pills = "".join(f'<span class="cal-pill">{esc(x)[:20]}</span>' for x in items.get(key, [])[:3])
             cells.append(f'<div class="{cls}"><div class="cal-date">{d.day}</div>{pills}</div>')
     return f'<div class="cal-grid">{head}{"".join(cells)}</div>'
-
 def render_kanban_html(columns):
-    out = ['<div class="kanban-grid">']
+    html_parts = ['<div class="kanban-grid">']
+
     for col_name, items in columns.items():
-        out.append(f'<div class="kan-col"><div class="kan-head"><span>{esc(col_name)}</span><span>{len(items)}</span></div>')
-        for item in items:
-            out.append(
-                f'''
-                <div class="task-card">
-                  <div class="task-title">{esc(item["title"])}</div>
-                  <div class="task-sub">{esc(item["sub"])}</div>
-                </div>
-                '''
-            )
-        out.append('</div>')
-    out.append('</div>')
-    return "".join(out)
+        html_parts.append(
+            f'<div class="kan-col">'
+            f'<div class="kan-head"><span>{esc(col_name)}</span><span>{len(items)}</span></div>'
+        )
+
+        if not items:
+            html_parts.append('<div class="task-card"><div class="task-sub">No items</div></div>')
+        else:
+            for item in items:
+                title = esc(item.get("title", "Case"))
+                sub = esc(item.get("sub", ""))
+                html_parts.append(
+                    f'<div class="task-card">'
+                    f'<div class="task-title">{title}</div>'
+                    f'<div class="task-sub">{sub}</div>'
+                    f'</div>'
+                )
+
+        html_parts.append('</div>')
+
+    html_parts.append('</div>')
+    return "".join(html_parts)
 
 def reset_session():
-    st.session_state.chat_messages = [{"kind": "sys", "text": "ResolveX Assistant reset."}]
+    st.session_state.chat_messages = [
+        {"kind": "bot", "text": "Hi, I’m ResolveX Assistant. Tell me what happened and I’ll help you resolve it."}
+    ]
     st.session_state.trace_lines = [{"text": "System reset.", "status": "OK"}]
     st.session_state.activity_feed = [{"text": "Dashboard reset.", "ts": datetime.now().strftime("%H:%M:%S")}]
     st.session_state.last_product = None
     st.session_state.complaint_text = ""
     st.session_state.sample_choice = "Custom..."
-    st.session_state.rx_chat_textarea = ""
     st.session_state.tool_panels = {
-        "notes": "No notes yet.",
+        "notes": "No case notes yet.",
         "tasks": "No tasks yet.",
         "manufacturer": "No manufacturer activity yet.",
         "tracker": "No tracker output yet.",
@@ -1148,80 +1223,112 @@ def reset_session():
         "database": {"state": "pending", "desc": "Waiting to log case data."},
     }
 
+    # IMPORTANT: delete widget state instead of assigning after widget exists
+    for key in ["rx_chat_textarea", "rx_chat_sample_select"]:
+        if key in st.session_state:
+            del st.session_state[key]
+
 def do_submit_complaint(text):
     append_chat("user", text)
     append_chat("sys", "Submitting complaint...")
     push_trace("[COMPLAINT_ANALYSIS] Analyzing text sentiment...", "RUN")
     push_activity("Complaint submitted")
-    set_status("listener", "running", "Understanding complaint...")
 
+    set_status("listener", "running", "Understanding complaint...")
     ok, res = api_post("/complaint", {"complaint": text})
 
-    if ok:
-        result_blob = safe_json(res, {})
-        set_status("listener", "done", "Complaint parsed successfully.")
-        set_status("analyst", "done", "Issue severity and eligibility evaluated.")
-        set_status("decision", "done", "Decision generated.")
-        set_status("database", "done", "Complaint stored successfully.")
-
-        summary_text = (
-            result_blob.get("message")
-            or result_blob.get("summary")
-            or result_blob.get("resolution_message")
-            or "Complaint processed successfully."
-        )
-        append_chat("bot", summary_text)
-        push_trace("[RESOLUTION_AGENT] Proposed resolution successfully.", "OK")
-        push_activity("Case updated by backend")
-
-        prod = result_blob.get("product_name") or result_blob.get("product") or result_blob.get("order_id")
-        if prod:
-            st.session_state.last_product = prod
-
-        if result_blob.get("manufacturer_contacted") or result_blob.get("escalated"):
-            set_status("manufacturer", "running", "Escalation sent to manufacturer.")
-            set_tool("manufacturer", json.dumps(result_blob, indent=2)[:600])
-        else:
-            set_status("manufacturer", "pending", "No escalation required.")
-
-        set_tool("notes", json.dumps(result_blob, indent=2)[:600])
-        set_tool("tasks", "Task board will refresh from backend data after reload.")
-        st.cache_data.clear()
-    else:
+    if not ok:
         set_status("listener", "error", "Failed to connect to API.")
         append_chat("bot", f"API error: {res.get('error', 'Unknown error')}")
         push_trace("[COMPLAINT_ANALYSIS] Complaint submission failed.", "ERR")
+        return
+
+    result_blob = safe_json(res, {})
+    customer_response = result_blob.get("customer_response", {}) or {}
+
+    set_status("listener", "done", "Complaint parsed successfully.")
+    set_status("analyst", "done", "Issue severity and eligibility evaluated.")
+    set_status("decision", "done", "Decision generated.")
+    set_status("database", "done", "Complaint stored successfully.")
+
+    st.cache_data.clear()
+    latest_case, latest_product_stats = latest_case_data()
+
+    prod = latest_case.get("product_name") or latest_case.get("product") or latest_case.get("order_id")
+    if prod:
+        st.session_state.last_product = prod
+
+    resolution_text = (
+        customer_response.get("customer_message")
+        or customer_response.get("resolution")
+        or customer_response.get("acknowledgement")
+        or result_blob.get("message")
+        or "Your complaint has been reviewed and recorded."
+    )
+
+    final_chat_text = f"{resolution_text}\n\nThanks for reporting this — your case has been logged and is being handled."
+    append_chat("bot", final_chat_text)
+
+    if latest_case.get("manufacturer_contacted") or latest_product_stats.get("manufacturer_contacted", False):
+        set_status("manufacturer", "running", "Escalation sent to manufacturer.")
+    else:
+        set_status("manufacturer", "pending", "No manufacturer escalation required yet.")
+
+    set_tool("notes", build_notes_text(latest_case))
+    set_tool("manufacturer", build_manufacturer_text(latest_case, latest_product_stats))
+    set_tool("tasks", "Task board refreshed from latest complaint data.")
+
+    push_trace("[RESOLUTION_AGENT] Proposed resolution successfully.", "OK")
+    push_activity("Case updated by backend")
+
+    if latest_case.get("is_resolved") or latest_case.get("resolution"):
+        append_chat("sys", "Case recorded successfully.")
 
 def run_tracker_action():
     prod = st.session_state.last_product
-    if prod:
-        push_trace(f"[TRACKER_AGENT] Running tracker for {prod}...", "RUN")
-        push_activity(f"Tracker started for {prod}")
-        set_status("tracker", "running", f"Running tracker for {prod}...")
-        ok, res = api_post("/tracker/run", {"product_name": prod})
-        if ok and safe_json(res, {}).get("success", True):
-            set_status("tracker", "done", "Tracker executed successfully.")
-            set_tool("tracker", json.dumps(res, indent=2)[:700])
-            append_chat("sys", f"Tracker ran for {prod}.")
-            push_trace(f"[TRACKER_AGENT] Tracker completed for {prod}.", "OK")
-        else:
-            set_status("tracker", "error", "Tracker failed.")
-            push_trace(f"[TRACKER_AGENT] Tracker failed for {prod}.", "ERR")
-        st.cache_data.clear()
+
+    if not prod:
+        latest_case, _ = latest_case_data()
+        prod = latest_case.get("product_name") or latest_case.get("product") or latest_case.get("order_id")
+        if prod:
+            st.session_state.last_product = prod
+
+    if not prod:
+        append_chat("sys", "No product available yet. Submit a complaint first.")
+        return
+
+    push_trace(f"[TRACKER_AGENT] Running tracker for {prod}...", "RUN")
+    push_activity(f"Tracker started for {prod}")
+    set_status("tracker", "running", f"Running tracker for {prod}...")
+
+    ok, res = api_post("/tracker/run", {"product_name": prod})
+
+    if ok and safe_json(res, {}).get("success", True):
+        set_status("tracker", "done", "Tracker executed successfully.")
+        set_tool("tracker", build_tracker_text(res, prod))
+        append_chat("sys", f"Tracker completed for {prod}.")
+        push_trace(f"[TRACKER_AGENT] Tracker completed for {prod}.", "OK")
     else:
-        append_chat("sys", "Submit a complaint first so the tracker knows which product to follow.")
+        set_status("tracker", "error", "Tracker failed.")
+        append_chat("sys", f"Tracker failed for {prod}.")
+        push_trace(f"[TRACKER_AGENT] Tracker failed for {prod}.", "ERR")
+
+    st.cache_data.clear()
 
 def run_learning_action():
     append_chat("sys", "Running learning agent...")
     push_trace("[LEARNING_AGENT] Analyzing patterns...", "RUN")
     push_activity("Learning agent started")
+
     ok, res = api_post("/learning/run", {})
+
     if ok and safe_json(res, {}).get("success", True):
         append_chat("sys", "Learning agent finished successfully.")
         push_trace("[LEARNING_AGENT] Learning completed.", "OK")
     else:
-        append_chat("sys", "Learning endpoint unavailable or failed.")
+        append_chat("sys", f"Learning endpoint unavailable or failed: {safe_json(res, {}).get('error', 'Unknown error')}")
         push_trace("[LEARNING_AGENT] Endpoint unavailable.", "ERR")
+
 
 def on_sample_change():
     selected_now = st.session_state.rx_chat_sample_select
@@ -1425,13 +1532,10 @@ if st.session_state.chat_open:
 
         with row1_col2:
             if st.button("Reset", use_container_width=True, key="rx_chat_reset_btn"):
-                reset_session()
-                st.session_state.chat_open = True
-                st.session_state.sample_choice = "Custom..."
-                st.session_state.rx_chat_sample_select = "Custom..."
-                st.session_state.rx_chat_textarea = ""
-                st.rerun()
-
+              reset_session()
+              st.session_state.chat_open = True
+              st.rerun()
+            
         row2_col1, row2_col2 = st.columns(2)
         with row2_col1:
             if st.button("Tracker", use_container_width=True, key="rx_chat_tracker_btn"):
@@ -1522,10 +1626,19 @@ elif page == "Operations":
     st.markdown(render_calendar_html(calendar_items), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
+    task_board_html = render_kanban_html(kanban_cols)
+    
     st.markdown(
-        '<div class="rx-card"><div class="rx-card-title">Task Board</div><div class="rx-card-desc">Kanban-style complaint flow across stages.</div>',
-        unsafe_allow_html=True
-    )
+      f'''
+      <div class="rx-card">
+        <div class="rx-card-title">Task Board</div>
+            <div class="rx-card-desc">Kanban-style complaint flow across stages.</div>
+              {task_board_html}
+              </div>
+              ''',
+              unsafe_allow_html=True
+              )
+
     st.markdown(render_kanban_html(kanban_cols), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
