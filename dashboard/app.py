@@ -73,9 +73,7 @@ html, body, [data-testid="stAppViewContainer"] {
 }
 [data-testid="stSidebar"] * { color: #deebff !important; }
 
-[data-testid="stMain"] {
-  background: transparent !important;
-}
+[data-testid="stMain"] { background: transparent !important; }
 
 .block-container {
   padding-top: 1.35rem !important;
@@ -199,7 +197,6 @@ hr {
 [data-testid="stSidebar"] .stRadio > label { display: none; }
 [data-testid="stSidebar"] .stRadio div[role="radiogroup"] { gap: 4px !important; }
 
-/* sidebar nav */
 [data-testid="stSidebar"] div[role="radiogroup"] > label {
   display: flex !important;
   align-items: center !important;
@@ -298,17 +295,17 @@ hr {
     0 0 0 2px rgba(103,233,255,.12);
 }
 .rx-card-title {
-  font-size:1rem;
-  font-weight:800;
-  color:#ffffff;
-  letter-spacing:-.02em;
-  margin-bottom:4px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -.02em;
+  margin-bottom: 4px;
 }
 .rx-card-desc {
-  font-size:.82rem;
-  color:var(--muted);
-  line-height:1.5;
-  margin-bottom:12px;
+  font-size: .82rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 12px;
 }
 
 .trace-line {
@@ -533,7 +530,6 @@ hr {
 .mini-stat span   { display:block; color:#93a6c8; font-size:.72rem; margin-bottom:5px; }
 .mini-stat strong { font-size:.92rem; font-weight:800; color:#f5f9ff; }
 
-/* floating chat button */
 div.st-key-rx_chat_fab {
   position: fixed !important;
   right: 20px !important;
@@ -582,7 +578,6 @@ div.st-key-rx_chat_fab button:hover {
   filter: brightness(1.04) !important;
 }
 
-/* floating chat panel */
 div.st-key-rx_chat_panel {
   position: fixed !important;
   right: 20px !important;
@@ -747,7 +742,7 @@ def pull_list(data, *keys):
             return data.get(k)
     return []
 
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=2)
 def fetch_all_data():
     ok_c, c_data = api_get("/complaints")
     ok_p, p_data = api_get("/products")
@@ -851,8 +846,7 @@ def infer_counts(complaints, summary, pending):
         if not due:
             continue
         try:
-            raw_str = str(due).replace("Z", "").replace("+00:00", "").split(".")[0]
-            due_dt = datetime.fromisoformat(raw_str)
+            due_dt = datetime.fromisoformat(str(due).replace("Z", "+00:00").replace("+00:00", ""))
             closed = c.get("loop_closed_at") or c.get("resolved_at")
             if due_dt < now_dt and not closed:
                 overdue += 1
@@ -900,8 +894,7 @@ def build_calendar_items(complaints):
         if not raw:
             continue
         try:
-            raw_str = str(raw).replace("Z", "").replace("+00:00", "").split(".")[0]
-            dt = datetime.fromisoformat(raw_str)
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00").replace("+00:00", ""))
             d = dt.date().isoformat()
             items.setdefault(d, []).append(label)
         except Exception:
@@ -918,13 +911,93 @@ def build_kanban(complaints):
 
         if status in {"resolved", "closed", "complete", "completed"} or c.get("loop_closed_at"):
             cols["Resolved"].append(item)
-        elif c.get("manufacturer_contacted") or c.get("escalated"):
+        elif c.get("manufacturer_contacted") or c.get("escalated") or status == "escalate":
             cols["Manufacturer"].append(item)
         elif status in {"analyzing", "analysis", "processing", "investigating", "in_progress"}:
             cols["Analyzing"].append(item)
         else:
             cols["New"].append(item)
     return cols
+
+def dedupe_cases(cases):
+    seen = set()
+    out = []
+    for c in cases:
+        key = c.get("complaint_id") or (
+            c.get("order_id"),
+            c.get("product_name") or c.get("product"),
+            c.get("issue_type") or c.get("category"),
+            c.get("status") or c.get("resolution"),
+            c.get("complaint") or c.get("summary"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(c)
+    return out
+
+def latest_case_data():
+    latest_data = fetch_all_data()
+    latest_complaints = dedupe_cases(latest_data.get("complaints", []))
+    latest_products = latest_data.get("products", [])
+
+    latest_case = latest_complaints[0] if latest_complaints else {}
+    latest_product_stats = {}
+
+    product_name = latest_case.get("product_name") or latest_case.get("product")
+    if product_name and latest_products:
+        for p in latest_products:
+            p_name = p.get("name") or p.get("product_name")
+            if p_name == product_name:
+                latest_product_stats = p
+                break
+
+    return latest_case, latest_product_stats
+
+def build_notes_text(case: dict) -> str:
+    if not case:
+        return "No case notes yet."
+
+    product_name = case.get("product_name") or case.get("product") or "Unknown"
+    order_id = case.get("order_id") or "Not provided"
+    issue_type = case.get("issue_type") or case.get("category") or "other"
+    summary = case.get("complaint_summary") or case.get("summary") or case.get("complaint") or "No summary available."
+    resolution = case.get("resolution") or case.get("decision") or "Pending"
+    reason = case.get("decision_reason") or "No decision reason available."
+    priority = case.get("priority") or case.get("urgency_level") or "medium"
+    eta = case.get("estimated_resolution_days") or case.get("eta") or "N/A"
+
+    return (
+        f"Product: {product_name}\n"
+        f"Order ID: {order_id}\n"
+        f"Issue Type: {issue_type}\n"
+        f"Priority: {priority}\n"
+        f"Resolution: {resolution}\n"
+        f"ETA: {eta}\n"
+        f"Summary: {summary}\n"
+        f"Reason: {reason}"
+    )
+
+def build_tracker_text(result: dict, product_name: str) -> str:
+    if not result:
+        return f"Tracker ran for {product_name}, but no details were returned."
+    parsed = safe_json(result, {})
+    status = parsed.get("status") or parsed.get("result", {}).get("status") or "completed"
+    return f"Tracker status: {status}\nProduct: {product_name}"
+
+def build_manufacturer_text(case: dict, product_stats: dict) -> str:
+    if not case:
+        return "No manufacturer activity yet."
+
+    product_name = case.get("product_name") or case.get("product") or "Unknown"
+    manufacturer_contacted = case.get("manufacturer_contacted") or product_stats.get("manufacturer_contacted", False)
+    manufacturer_resolved = case.get("manufacturer_resolved") or product_stats.get("manufacturer_resolved", False)
+
+    return (
+        f"Product: {product_name}\n"
+        f"Manufacturer Contacted: {'Yes' if manufacturer_contacted else 'No'}\n"
+        f"Manufacturer Resolved: {'Yes' if manufacturer_resolved else 'No'}"
+    )
 
 def render_trace_html():
     rows = st.session_state.trace_lines or [{"text": "System initialized.", "status": "OK"}]
@@ -937,32 +1010,80 @@ def render_activity_html():
     rows = st.session_state.activity_feed or [{"text": "Awaiting events.", "ts": datetime.now().strftime("%H:%M:%S")}]
     out = []
     for row in rows:
-        out.append(f'<div class="feed-item"><div class="feed-dot"></div><div><div class="feed-time">{esc(row.get("ts",""))}</div><div class="feed-text">{esc(row.get("text",""))}</div></div></div>')
+        out.append(
+            f'''
+            <div class="feed-item">
+              <div class="feed-dot"></div>
+              <div>
+                <div class="feed-time">{esc(row.get("ts",""))}</div>
+                <div class="feed-text">{esc(row.get("text",""))}</div>
+              </div>
+            </div>
+            '''
+        )
     return "".join(out)
 
 def render_status_html():
     items = st.session_state.system_status
     order = ["listener", "analyst", "decision", "manufacturer", "tracker", "database"]
-    names = {"listener": "Listener Agent", "analyst": "Analyst Agent", "decision": "Decision Agent",
-             "manufacturer": "Manufacturer Agent", "tracker": "Tracker Agent", "database": "Database Agent"}
+    names = {
+        "listener": "Listener Agent",
+        "analyst": "Analyst Agent",
+        "decision": "Decision Agent",
+        "manufacturer": "Manufacturer Agent",
+        "tracker": "Tracker Agent",
+        "database": "Database Agent",
+    }
     out = []
     for key in order:
         data = items.get(key, {"state": "pending", "desc": "Waiting..."})
         cls = status_color(data.get("state"))
-        out.append(f'<div class="status-item"><span class="dot dot-{cls}"></span><div><div class="status-title">{esc(names.get(key, key.title()))}</div><div class="status-text">{esc(data.get("desc",""))}</div></div></div>')
+        out.append(
+            f'''
+            <div class="status-item">
+              <span class="dot dot-{cls}"></span>
+              <div>
+                <div class="status-title">{esc(names.get(key, key.title()))}</div>
+                <div class="status-text">{esc(data.get("desc",""))}</div>
+              </div>
+            </div>
+            '''
+        )
     return "".join(out)
 
 def render_tools_html():
     panels = st.session_state.tool_panels
-    labels = {"notes": "Notes", "tasks": "Tasks", "manufacturer": "Manufacturer", "tracker": "Tracker", "calendar": "Calendar"}
-    badges = {"notes": "Memory", "tasks": "Board", "manufacturer": "Escalation", "tracker": "Follow-up", "calendar": "Schedule"}
+    labels = {
+        "notes": "Notes",
+        "tasks": "Tasks",
+        "manufacturer": "Manufacturer",
+        "tracker": "Tracker",
+        "calendar": "Calendar",
+    }
+    badges = {
+        "notes": "Memory",
+        "tasks": "Board",
+        "manufacturer": "Escalation",
+        "tracker": "Follow-up",
+        "calendar": "Schedule",
+    }
     out = []
     for key in ["notes", "tasks", "manufacturer", "tracker", "calendar"]:
-        out.append(f'<div class="tool-card"><div class="tool-head"><div class="tool-title">{esc(labels[key])}</div><div class="tool-badge">{esc(badges[key])}</div></div><div class="tool-text">{esc(panels.get(key, "No output yet."))}</div></div>')
+        out.append(
+            f'''
+            <div class="tool-card">
+              <div class="tool-head">
+                <div class="tool-title">{esc(labels[key])}</div>
+                <div class="tool-badge">{esc(badges[key])}</div>
+              </div>
+              <div class="tool-text">{esc(panels.get(key, "No output yet."))}</div>
+            </div>
+            '''
+        )
     return "".join(out)
 
 def render_chat_html():
-    rows = st.session_state.chat_messages or [{"kind": "sys", "text": "Assistant ready."}]
+    rows = st.session_state.chat_messages or [{"kind": "bot", "text": "Hi, I’m ResolveX Assistant. Tell me what happened and I’ll help you resolve it."}]
     out = []
     for row in rows[-12:]:
         kind = row.get("kind", "bot")
@@ -1062,25 +1183,37 @@ def render_calendar_html(items):
     return f'<div class="cal-grid">{head}{"".join(cells)}</div>'
 
 def render_kanban_html(columns):
-    out = ['<div class="kanban-grid">']
+    html_parts = ['<div class="kanban-grid">']
     for col_name, items in columns.items():
-        out.append(f'<div class="kan-col"><div class="kan-head"><span>{esc(col_name)}</span><span>{len(items)}</span></div>')
-        for item in items:
-            out.append(f'<div class="task-card"><div class="task-title">{esc(item["title"])}</div><div class="task-sub">{esc(item["sub"])}</div></div>')
-        out.append('</div>')
-    out.append('</div>')
-    return "".join(out)
+        html_parts.append(
+            f'<div class="kan-col"><div class="kan-head"><span>{esc(col_name)}</span><span>{len(items)}</span></div>'
+        )
+
+        if not items:
+            html_parts.append('<div class="task-card"><div class="task-sub">No items</div></div>')
+        else:
+            for item in items:
+                title = esc(item.get("title", "Case"))
+                sub = esc(item.get("sub", ""))
+                html_parts.append(
+                    f'<div class="task-card"><div class="task-title">{title}</div><div class="task-sub">{sub}</div></div>'
+                )
+        html_parts.append('</div>')
+
+    html_parts.append('</div>')
+    return "".join(html_parts)
 
 def reset_session():
-    st.session_state.chat_messages = [{"kind": "sys", "text": "ResolveX Assistant reset."}]
+    st.session_state.chat_messages = [
+        {"kind": "bot", "text": "Hi, I’m ResolveX Assistant. Tell me what happened and I’ll help you resolve it."}
+    ]
     st.session_state.trace_lines = [{"text": "System reset.", "status": "OK"}]
     st.session_state.activity_feed = [{"text": "Dashboard reset.", "ts": datetime.now().strftime("%H:%M:%S")}]
     st.session_state.last_product = None
     st.session_state.complaint_text = ""
     st.session_state.sample_choice = "Custom..."
-    st.session_state.rx_chat_textarea = ""
     st.session_state.tool_panels = {
-        "notes": "No notes yet.",
+        "notes": "No case notes yet.",
         "tasks": "No tasks yet.",
         "manufacturer": "No manufacturer activity yet.",
         "tracker": "No tracker output yet.",
@@ -1095,6 +1228,10 @@ def reset_session():
         "database": {"state": "pending", "desc": "Waiting to log case data."},
     }
 
+    for key in ["rx_chat_textarea", "rx_chat_sample_select"]:
+        if key in st.session_state:
+            del st.session_state[key]
+
 def do_submit_complaint(text):
     append_chat("user", text)
     append_chat("sys", "Submitting complaint...")
@@ -1104,70 +1241,96 @@ def do_submit_complaint(text):
 
     ok, res = api_post("/complaint", {"complaint": text})
 
-    if ok:
-        result_blob = safe_json(res, {})
-        set_status("listener", "done", "Complaint parsed successfully.")
-        set_status("analyst", "done", "Issue severity and eligibility evaluated.")
-        set_status("decision", "done", "Decision generated.")
-        set_status("database", "done", "Complaint stored successfully.")
-
-        summary_text = (
-            result_blob.get("message")
-            or result_blob.get("summary")
-            or result_blob.get("resolution_message")
-            or "Complaint processed successfully."
-        )
-        append_chat("bot", summary_text)
-        push_trace("[RESOLUTION_AGENT] Proposed resolution successfully.", "OK")
-        push_activity("Case updated by backend")
-
-        prod = result_blob.get("product_name") or result_blob.get("product") or result_blob.get("order_id")
-        if prod:
-            st.session_state.last_product = prod
-
-        if result_blob.get("manufacturer_contacted") or result_blob.get("escalated"):
-            set_status("manufacturer", "running", "Escalation sent to manufacturer.")
-            set_tool("manufacturer", json.dumps(result_blob, indent=2)[:600])
-        else:
-            set_status("manufacturer", "pending", "No escalation required.")
-
-        set_tool("notes", json.dumps(result_blob, indent=2)[:600])
-        set_tool("tasks", "Task board will refresh from backend data after reload.")
-        st.cache_data.clear()
-    else:
+    if not ok:
         set_status("listener", "error", "Failed to connect to API.")
         append_chat("bot", f"API error: {res.get('error', 'Unknown error')}")
         push_trace("[COMPLAINT_ANALYSIS] Complaint submission failed.", "ERR")
+        return
+
+    result_blob = safe_json(res, {})
+    customer_response = result_blob.get("customer_response", {}) or {}
+
+    set_status("listener", "done", "Complaint parsed successfully.")
+    set_status("analyst", "done", "Issue severity and eligibility evaluated.")
+    set_status("decision", "done", "Decision generated.")
+    set_status("database", "done", "Complaint stored successfully.")
+
+    st.cache_data.clear()
+    latest_case, latest_product_stats = latest_case_data()
+
+    prod = latest_case.get("product_name") or latest_case.get("product") or latest_case.get("order_id")
+    if prod:
+        st.session_state.last_product = prod
+
+    resolution_text = (
+        customer_response.get("customer_message")
+        or customer_response.get("resolution")
+        or customer_response.get("acknowledgement")
+        or result_blob.get("message")
+        or "Your complaint has been reviewed and recorded."
+    )
+
+    append_chat("bot", f"{resolution_text}\n\nThanks for reporting this — your case has been logged and is being handled.")
+
+    if latest_case.get("manufacturer_contacted") or latest_product_stats.get("manufacturer_contacted", False):
+        set_status("manufacturer", "running", "Escalation sent to manufacturer.")
+    else:
+        set_status("manufacturer", "pending", "No manufacturer escalation required yet.")
+
+    set_tool("notes", build_notes_text(latest_case))
+    set_tool("manufacturer", build_manufacturer_text(latest_case, latest_product_stats))
+    set_tool("tasks", "Task board refreshed from latest complaint data.")
+
+    push_trace("[RESOLUTION_AGENT] Proposed resolution successfully.", "OK")
+    push_activity("Case updated by backend")
+
+    if latest_case.get("is_resolved") or latest_case.get("resolution"):
+        append_chat("sys", "Case recorded successfully.")
 
 def run_tracker_action():
     prod = st.session_state.last_product
-    if prod:
-        push_trace(f"[TRACKER_AGENT] Running tracker for {prod}...", "RUN")
-        push_activity(f"Tracker started for {prod}")
-        set_status("tracker", "running", f"Running tracker for {prod}...")
-        ok, res = api_post("/tracker/run", {"product_name": prod})
-        if ok and safe_json(res, {}).get("success", True):
-            set_status("tracker", "done", "Tracker executed successfully.")
-            set_tool("tracker", json.dumps(res, indent=2)[:700])
-            append_chat("sys", f"Tracker ran for {prod}.")
-            push_trace(f"[TRACKER_AGENT] Tracker completed for {prod}.", "OK")
-        else:
-            set_status("tracker", "error", "Tracker failed.")
-            push_trace(f"[TRACKER_AGENT] Tracker failed for {prod}.", "ERR")
-        st.cache_data.clear()
+
+    if not prod:
+        latest_case, _ = latest_case_data()
+        prod = latest_case.get("product_name") or latest_case.get("product") or latest_case.get("order_id")
+        if prod:
+            st.session_state.last_product = prod
+
+    if not prod:
+        append_chat("sys", "No product available yet. Submit a complaint first.")
+        return
+
+    push_trace(f"[TRACKER_AGENT] Running tracker for {prod}...", "RUN")
+    push_activity(f"Tracker started for {prod}")
+    set_status("tracker", "running", f"Running tracker for {prod}...")
+
+    ok, res = api_post("/tracker/run", {"product_name": prod})
+
+    if ok and safe_json(res, {}).get("success", True):
+        set_status("tracker", "done", "Tracker executed successfully.")
+        set_tool("tracker", build_tracker_text(res, prod))
+        append_chat("sys", f"Tracker completed for {prod}.")
+        push_trace(f"[TRACKER_AGENT] Tracker completed for {prod}.", "OK")
     else:
-        append_chat("sys", "Submit a complaint first so the tracker knows which product to follow.")
+        set_status("tracker", "error", "Tracker failed.")
+        append_chat("sys", f"Tracker failed for {prod}.")
+        push_trace(f"[TRACKER_AGENT] Tracker failed for {prod}.", "ERR")
+
+    st.cache_data.clear()
 
 def run_learning_action():
     append_chat("sys", "Running learning agent...")
     push_trace("[LEARNING_AGENT] Analyzing patterns...", "RUN")
     push_activity("Learning agent started")
+
     ok, res = api_post("/learning/run", {})
+
     if ok and safe_json(res, {}).get("success", True):
         append_chat("sys", "Learning agent finished successfully.")
         push_trace("[LEARNING_AGENT] Learning completed.", "OK")
     else:
-        append_chat("sys", "Learning endpoint unavailable or failed.")
+        parsed = safe_json(res, {})
+        append_chat("sys", f"Learning endpoint unavailable or failed: {parsed.get('error', 'Unknown error')}")
         push_trace("[LEARNING_AGENT] Endpoint unavailable.", "ERR")
 
 def on_sample_change():
@@ -1195,9 +1358,9 @@ if "rx_chat_textarea" not in st.session_state:
 
 data = fetch_all_data()
 api_ok = data["api_ok"]
-complaints = data["complaints"]
-pending = data["pending"]
-products = data["products"]
+complaints = dedupe_cases(data["complaints"])
+pending = dedupe_cases(data["pending"])
+products = dedupe_cases(data["products"])
 summary = data["summary"]
 
 total_c, active_cases, resolved_cases, escalated, overdue, manufacturer_cases = infer_counts(
@@ -1374,9 +1537,6 @@ if st.session_state.chat_open:
             if st.button("Reset", use_container_width=True, key="rx_chat_reset_btn"):
                 reset_session()
                 st.session_state.chat_open = True
-                st.session_state.sample_choice = "Custom..."
-                st.session_state.rx_chat_sample_select = "Custom..."
-                st.session_state.rx_chat_textarea = ""
                 st.rerun()
 
         row2_col1, row2_col2 = st.columns(2)
@@ -1409,45 +1569,37 @@ if page == "Overview":
 
     col_l, col_r = st.columns(2)
     with col_l:
-        # ✅ FIXED: merged into single st.markdown call
-        st.markdown(f'''
-            <div class="rx-card glow-green">
-              <div class="rx-card-title">AI Thought Trace</div>
-              <div class="rx-card-desc">Readable multi-agent workflow progression.</div>
-              {render_trace_html()}
-            </div>
-        ''', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card glow-green"><div class="rx-card-title">AI Thought Trace</div><div class="rx-card-desc">Readable multi-agent workflow progression.</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown(render_trace_html(), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with col_r:
-        # ✅ FIXED: merged into single st.markdown call
-        st.markdown(f'''
-            <div class="rx-card glow-blue">
-              <div class="rx-card-title">Live Activity Feed</div>
-              <div class="rx-card-desc">Recent operational events and updates.</div>
-              {render_activity_html()}
-            </div>
-        ''', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card glow-blue"><div class="rx-card-title">Live Activity Feed</div><div class="rx-card-desc">Recent operational events and updates.</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown(render_activity_html(), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     col_l2, col_r2 = st.columns([1.2, 1])
     with col_l2:
-        # ✅ FIXED: merged into single st.markdown call
-        st.markdown(f'''
-            <div class="rx-card">
-              <div class="rx-card-title">Resolution Breakdown</div>
-              <div class="rx-card-desc">Outcome distribution across complaints.</div>
-              {render_bars_html(resolution)}
-            </div>
-        ''', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card"><div class="rx-card-title">Resolution Breakdown</div><div class="rx-card-desc">Outcome distribution across complaints.</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown(render_bars_html(resolution), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with col_r2:
-        # ✅ FIXED: merged into single st.markdown call
-        st.markdown(f'''
-            <div class="rx-card">
-              <div class="rx-card-title">Issue Type Distribution</div>
-              <div class="rx-card-desc">Current complaint category mix.</div>
-              {render_donut_html(issue_types)}
-            </div>
-        ''', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card"><div class="rx-card-title">Issue Type Distribution</div><div class="rx-card-desc">Current complaint category mix.</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown(render_donut_html(issue_types), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ── PAGE: OPERATIONS ─────────────────────────────────────────────────────────
 
@@ -1455,59 +1607,65 @@ elif page == "Operations":
     col_l, col_r = st.columns([1, 1.1])
 
     with col_l:
-        # ✅ FIXED: merged into single st.markdown call
-        st.markdown(f'''
-            <div class="rx-card">
-              <div class="rx-card-title">System Status</div>
-              <div class="rx-card-desc">Real subsystem states during execution.</div>
-              {render_status_html()}
-            </div>
-        ''', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card"><div class="rx-card-title">System Status</div><div class="rx-card-desc">Real subsystem states during execution.</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown(render_status_html(), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with col_r:
-        # ✅ FIXED: merged into single st.markdown call
-        st.markdown(f'''
-            <div class="rx-card">
-              <div class="rx-card-title">Operational Panels</div>
-              <div class="rx-card-desc">Notes, tasks, calendar, manufacturer, and tracker output.</div>
-              {render_tools_html()}
-            </div>
-        ''', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="rx-card"><div class="rx-card-title">Operational Panels</div><div class="rx-card-desc">Notes, tasks, calendar, manufacturer, and tracker output.</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown(render_tools_html(), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # ✅ FIXED: merged into single st.markdown call
-    st.markdown(f'''
-        <div class="rx-card">
-          <div class="rx-card-title">Monthly Calendar</div>
-          <div class="rx-card-desc">ETA and follow-up visibility for this month.</div>
-          {render_calendar_html(calendar_items)}
-        </div>
-    ''', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="rx-card"><div class="rx-card-title">Monthly Calendar</div><div class="rx-card-desc">ETA and follow-up visibility for this month.</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(render_calendar_html(calendar_items), unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # ✅ FIXED: merged into single st.markdown call
-    st.markdown(f'''
+    task_board_html = render_kanban_html(kanban_cols)
+    st.markdown(
+        f'''
         <div class="rx-card">
           <div class="rx-card-title">Task Board</div>
           <div class="rx-card-desc">Kanban-style complaint flow across stages.</div>
-          {render_kanban_html(kanban_cols)}
+          {task_board_html}
         </div>
-    ''', unsafe_allow_html=True)
+        ''',
+        unsafe_allow_html=True
+    )
 
 # ── PAGE: COMPLAINTS ─────────────────────────────────────────────────────────
-
 elif page == "Complaints":
-    # ✅ FIXED: card header merged; dataframe stays as native st.dataframe (correct)
-    st.markdown('''
-        <div class="rx-card">
-          <div class="rx-card-title">Complaint Cases</div>
-          <div class="rx-card-desc">Latest complaint data returned by the API.</div>
-        </div>
-    ''', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="rx-card"><div class="rx-card-title">Complaint Cases</div><div class="rx-card-desc">Latest complaint data returned by the API.</div>',
+        unsafe_allow_html=True
+    )
 
     if complaints:
-        rows = []
+        deduped_rows = []
+        seen = set()
+
         for c in complaints:
-            rows.append({
-                "Order ID": c.get("order_id"),
+            key = (
+                c.get("order_id") or "Not provided",
+                c.get("product_name") or c.get("product") or "",
+                c.get("issue_type") or c.get("category") or "",
+                c.get("status") or c.get("resolution") or "",
+            )
+
+            if key in seen:
+                continue
+            seen.add(key)
+
+            deduped_rows.append({
+                "Order ID": c.get("order_id") or "Not provided",
                 "Product": c.get("product_name") or c.get("product"),
                 "Issue Type": c.get("issue_type") or c.get("category"),
                 "Status": c.get("status") or c.get("resolution"),
@@ -1516,45 +1674,42 @@ elif page == "Complaints":
                 "ETA": c.get("eta") or c.get("follow_up_date") or c.get("due_date"),
                 "Summary": c.get("summary") or c.get("complaint"),
             })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        st.dataframe(pd.DataFrame(deduped_rows), use_container_width=True, hide_index=True)
     else:
         st.info("No complaints returned yet.")
 
-    if pending:
-        st.markdown('''
-            <div class="rx-card">
-              <div class="rx-card-title">Pending Manufacturer Cases</div>
-              <div class="rx-card-desc">Cases waiting on external manufacturer action.</div>
-            </div>
-        ''', unsafe_allow_html=True)
-        p_rows = []
-        for p in pending:
-            p_rows.append({
-                "Product": p.get("product_name") or p.get("product"),
-                "Order ID": p.get("order_id"),
-                "Status": p.get("status"),
-                "Reason": p.get("reason") or p.get("issue_type"),
-                "ETA": p.get("eta") or p.get("follow_up_date"),
-            })
-        st.dataframe(pd.DataFrame(p_rows), use_container_width=True, hide_index=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 # ── PAGE: PRODUCTS ───────────────────────────────────────────────────────────
 
 elif page == "Products":
-    st.markdown('''
-        <div class="rx-card">
-          <div class="rx-card-title">Products</div>
-          <div class="rx-card-desc">Product catalog or complaint-linked products returned by the API.</div>
-        </div>
-    ''', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="rx-card"><div class="rx-card-title">Products</div><div class="rx-card-desc">Product catalog or complaint-linked products returned by the API.</div>',
+        unsafe_allow_html=True
+    )
+
+    complaint_counts = {}
+    for c in complaints:
+        pname = c.get("product_name") or c.get("product")
+        if pname:
+            complaint_counts[pname] = complaint_counts.get(pname, 0) + 1
 
     if not products:
         st.info("No products returned from the backend yet.")
     else:
+        seen_products = set()
+
         for product in products:
             name = product.get("name") or product.get("product_name") or "Unnamed Product"
+
+            if name in seen_products:
+                continue
+            seen_products.add(name)
+
             sku = product.get("sku") or product.get("id") or product.get("product_id") or "-"
-            issues = product.get("issues") or product.get("complaint_count") or 0
+            issues = complaint_counts.get(name, product.get("issues") or product.get("complaint_count") or 0)
             warranty = product.get("warranty") or product.get("warranty_status") or "-"
             replacement = product.get("replacement_window") or product.get("replacement_policy") or "-"
 
@@ -1574,3 +1729,5 @@ elif page == "Products":
               </div>
             </div>
             """, unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
