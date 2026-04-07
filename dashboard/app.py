@@ -1642,6 +1642,7 @@ elif page == "Operations":
     )
 
 # ── PAGE: COMPLAINTS ─────────────────────────────────────────────────────────
+
 elif page == "Complaints":
     st.markdown(
         '<div class="rx-card"><div class="rx-card-title">Complaint Cases</div><div class="rx-card-desc">Latest complaint data returned by the API.</div>',
