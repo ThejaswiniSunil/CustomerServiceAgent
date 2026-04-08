@@ -4,19 +4,23 @@ from typing import Any, Dict, List
 
 from google.cloud import firestore
 from dotenv import load_dotenv
+from .agents.listener_agent import listen
+from .agents.analyst_agent import check_eligibility
+from .agents.decision_agent import decide
+from .agents.database_agent import log_complaint, get_all_complaints, get_product_stats
+from .agents.insight_agent import analyze
+from .agents.manufacturer_agent import contact_manufacturer
+from .agents.tracker_agent import track_and_followup
+from .agents.learning_agent import improve
+from .mcp.task_tool import create_task
 
-from agents.listener_agent import listen
-from agents.analyst_agent import check_eligibility
-from agents.decision_agent import decide
-from agents.database_agent import (
-    log_complaint,
-    get_all_complaints,
-    get_product_stats,
-)
-from agents.insight_agent import analyze
-from agents.manufacturer_agent import contact_manufacturer
-from agents.tracker_agent import track_and_followup
-from agents.learning_agent import improve
+
+
+
+
+
+
+
 
 # MCP tool — task management
 from mcp.task_tool import create_task
