@@ -1,22 +1,15 @@
-import os
-import sys
-import math
-import json
-import html
-import calendar as cal_mod
-from datetime import datetime
 
+import os, sys, math, json, calendar as cal_mod
+from datetime import datetime, timedelta
 import requests
-import pandas as pd
 import streamlit as st
-from datetime import timedelta
+import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-# ── CONFIG ──────────────────────────────────────────────────────────────────
+# ── Config ──────────────────────────────────────────────────────────────────
 
-API_BASE = os.getenv("RESOLVEX_API_URL", "http://localhost:8080").rstrip("/")
-REQUEST_TIMEOUT = 20
+API_BASE = os.getenv("RESOLVEX_API_URL", "http://localhost:8080")
 
 st.set_page_config(
     page_title="ResolveX Command Center",
@@ -25,175 +18,262 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── GLOBAL CSS ───────────────────────────────────────────────────────────────
+# ── Global CSS ───────────────────────────────────────────────────────────────
 
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap');
 
-:root {
-  --bg: #08111d;
-  --panel: rgba(22, 30, 48, 0.88);
-  --panel-2: rgba(18, 26, 42, 0.92);
-  --line: rgba(255,255,255,.08);
-  --text: #f5f9ff;
-  --muted: #9aaed0;
-  --blue: #7da2ff;
-  --cyan: #67e9ff;
-  --green: #9dff8a;
-  --green-soft: rgba(157,255,138,.22);
-}
-
 html, body, [data-testid="stAppViewContainer"] {
-  background:
-    radial-gradient(circle at 14% 18%, rgba(125,162,255,.12), transparent 25%),
-    radial-gradient(circle at 82% 20%, rgba(103,233,255,.09), transparent 24%),
-    linear-gradient(180deg, #07101b 0%, #091321 100%) !important;
-  color: var(--text) !important;
+  background: #08111d !important;
+  color: #f5f9ff !important;
   font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif !important;
 }
-
 [data-testid="stAppViewContainer"]::before {
   content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background:
-    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
-  background-size: 28px 28px;
-  mask-image: linear-gradient(to bottom, rgba(255,255,255,.18), transparent 80%);
-  opacity: .18;
+    radial-gradient(circle at 10% 12%, rgba(93,133,255,.12), transparent 26%),
+    radial-gradient(circle at 86% 18%, rgba(202,109,255,.08), transparent 22%),
+    radial-gradient(circle at 52% 84%, rgba(85,230,255,.05), transparent 28%);
 }
-
 [data-testid="stSidebar"] {
-  background: linear-gradient(180deg, rgba(10,16,27,.96), rgba(8,12,20,.96)) !important;
-  border-right: 1px solid rgba(255,255,255,.06) !important;
-  box-shadow: inset -1px 0 0 rgba(255,255,255,.03);
+  background: linear-gradient(180deg,#070e1a 0%,#060b14 100%) !important;
+  border-right: 1px solid rgba(121,149,230,.12) !important;
 }
 [data-testid="stSidebar"] * { color: #deebff !important; }
-
-[data-testid="stMain"] { background: transparent !important; }
-
-.block-container {
-  padding-top: 1.35rem !important;
-  padding-bottom: 4rem !important;
-}
-
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: rgba(255,255,255,.03); }
-::-webkit-scrollbar-thumb { background: rgba(93,133,255,.35); border-radius: 999px; }
-
-#MainMenu, footer { visibility: hidden; }
-
-header,
-[data-testid="stHeader"] {
-  visibility: visible !important;
-  background: #08111d !important;
-  border-bottom: 1px solid rgba(255,255,255,.06) !important;
-}
-
-[data-testid="stToolbar"] {
-  display: block !important;
-  right: auto !important;
-  left: 12px !important;
-  top: 10px !important;
-}
-[data-testid="stToolbar"] button {
-  background: rgba(15,23,40,.96) !important;
-  border: 1px solid rgba(255,255,255,.10) !important;
+[data-testid="stSidebar"] .stTextArea textarea {
+  background: #0f1728 !important;
+  border: 1px solid rgba(255,255,255,.08) !important;
   border-radius: 12px !important;
-  color: #dce7f7 !important;
-  box-shadow: 0 0 0 1px rgba(255,255,255,.03) inset !important;
+  color: #f5f9ff !important;
+  font-size: .85rem !important;
 }
-[data-testid="stToolbar"] button svg {
-  fill: #dce7f7 !important;
-  stroke: #dce7f7 !important;
-}
-[data-testid="stToolbar"] button:hover {
-  background: rgba(28,40,66,.98) !important;
-  border-color: rgba(93,133,255,.22) !important;
-}
-[data-testid="stToolbar"] * {
-  color: #dce7f7 !important;
-}
-
-[data-testid="stMetric"] {
-  background: linear-gradient(180deg, rgba(34,42,58,.92), rgba(27,35,49,.92)) !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
-  border-radius: 18px !important;
-  padding: 18px 16px !important;
-  box-shadow:
-    0 0 0 1px rgba(255,255,255,.02) inset,
-    0 10px 30px rgba(0,0,0,.28),
-    0 0 24px rgba(125,162,255,.08) !important;
-  position: relative;
-  overflow: hidden;
-}
-[data-testid="stMetric"]::after {
-  content: "";
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: 12px;
-  height: 3px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(157,255,138,.7), rgba(125,162,255,.85));
-  opacity: .8;
-}
-[data-testid="stMetricValue"] {
-  color: #ffffff !important;
-  font-size: 2rem !important;
-  font-weight: 800 !important;
-  letter-spacing: -.04em !important;
-}
-[data-testid="stMetricLabel"] {
-  color: #d5e1f7 !important;
-  font-size: .82rem !important;
-  font-weight: 700 !important;
-}
-
-.stButton > button {
-  background: linear-gradient(135deg, #5f82ff, #85a6ff) !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
-  box-shadow: 0 8px 20px rgba(93,133,255,.25) !important;
-  color: white !important;
-  border-radius: 14px !important;
-  font-weight: 800 !important;
-  padding: 10px 18px !important;
-  transition: .18s ease !important;
-  font-family: 'DM Sans', sans-serif !important;
-}
-.stButton > button:hover {
-  filter: brightness(1.06) !important;
-  transform: translateY(-1px);
-}
-
-.stSelectbox > div > div,
-.stTextInput > div > div > input,
-.stTextArea textarea {
+[data-testid="stSidebar"] .stSelectbox > div > div {
   background: #0f1728 !important;
   border: 1px solid rgba(255,255,255,.08) !important;
   border-radius: 12px !important;
   color: #f5f9ff !important;
 }
+[data-testid="stMain"] { background: transparent !important; }
+.block-container { padding-top: 1.4rem !important; padding-bottom: 4rem !important; }
 
+[data-testid="stMetric"] {
+  background: linear-gradient(180deg,rgba(18,27,45,.97),rgba(12,19,33,.97)) !important;
+  border: 1px solid rgba(120,150,230,.14) !important;
+  border-radius: 20px !important;
+  padding: 18px 16px !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.28) !important;
+}
+[data-testid="stMetricValue"] {
+  color: #f5f9ff !important; font-size: 1.9rem !important;
+  font-weight: 800 !important; letter-spacing: -.04em !important;
+}
+[data-testid="stMetricLabel"] { color: #93a6c8 !important; font-size: .82rem !important; font-weight: 600 !important; }
+
+/* ── FAB BUTTON ── */
+div.st-key-rx_chat_fab {
+  position: fixed !important;
+  right: 20px !important;
+  bottom: 28px !important;
+  z-index: 10000 !important;
+  width: 76px !important;
+  height: 76px !important;
+}
+div.st-key-rx_chat_fab > div,
+div.st-key-rx_chat_fab [data-testid="stVerticalBlock"] {
+  background: transparent !important;
+}
+div.st-key-rx_chat_fab button {
+  width: 76px !important;
+  height: 76px !important;
+  min-height: 76px !important;
+  border-radius: 999px !important;
+  padding: 0 !important;
+  font-size: 0 !important;
+  color: transparent !important;
+  text-indent: -9999px !important;
+  overflow: hidden !important;
+  line-height: 0 !important;
+  background: linear-gradient(135deg,#6f93ff,#6d97ff) !important;
+  box-shadow: 0 12px 42px rgba(93,133,255,.40), 0 0 34px rgba(93,133,255,.20) !important;
+  position: relative !important;
+  border: none !important;
+}
+div.st-key-rx_chat_fab button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 30px;
+  height: 30px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  background-image: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'>\
+<path d='M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'/>\
+</svg>");
+}
+div.st-key-rx_chat_fab button:hover {
+  transform: scale(1.04);
+  filter: brightness(1.04) !important;
+}
+
+/* ── CHAT PANEL CONTAINER ── */
+div.st-key-rx_chat_panel {
+  position: fixed !important;
+  right: 24px !important;
+  bottom: 118px !important;
+  width: 390px !important;
+  max-width: calc(100vw - 40px) !important;
+  z-index: 9999 !important;
+}
+/* Force all Streamlit wrapper divs inside the panel to be transparent
+   so only our .rx-chat-shell controls the look */
+div.st-key-rx_chat_panel > div,
+div.st-key-rx_chat_panel [data-testid="stVerticalBlock"],
+div.st-key-rx_chat_panel [data-testid="stVerticalBlockBorderWrapper"],
+div.st-key-rx_chat_panel .element-container,
+div.st-key-rx_chat_panel section {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* ── THE ACTUAL CHAT SHELL — fully opaque, no bleed-through ── */
+.rx-chat-shell {
+  background: #0d1628;                        /* solid dark navy, zero transparency */
+  border: 1px solid rgba(93,133,255,.22);
+  border-radius: 22px;
+  box-shadow:
+    0 24px 60px rgba(0,0,0,.70),             /* deep drop shadow */
+    0 0 0 1px rgba(255,255,255,.04) inset,   /* subtle inner border */
+    0 0 40px rgba(93,133,255,.12);           /* blue glow */
+  overflow: hidden;
+  isolation: isolate;                         /* create new stacking context */
+}
+
+.rx-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  background: #111e35;                        /* solid, not rgba */
+}
+.rx-chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rx-chat-header-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #9dff8a;
+  box-shadow: 0 0 12px #9dff8a;
+}
+.rx-chat-header-title {
+  color: #f5f9ff;
+  font-size: .92rem;
+  font-weight: 800;
+}
+
+/* messages area — solid background */
+.rx-chat-messages {
+  padding: 14px;
+  max-height: 340px;
+  overflow-y: auto;
+  background: #080f1c;                        /* solid, not semi-transparent */
+}
+
+/* form area — solid background */
+.rx-chat-form {
+  padding: 14px;
+  border-top: 1px solid rgba(255,255,255,.07);
+  background: #0d1628;                        /* solid */
+}
+
+.rx-chat-sample-note {
+  color: #8fa3c7;
+  font-size: .75rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+/* ── CLOSE BUTTON ── */
+div.st-key-rx_chat_close button {
+  width: 38px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  border-radius: 999px !important;
+  padding: 0 !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  background: #1a2740 !important;            /* solid */
+  color: white !important;
+  font-size: 16px !important;
+  box-shadow: none !important;
+}
+div.st-key-rx_chat_close button:hover {
+  background: #243451 !important;
+}
+
+/* ── GLOBAL BUTTONS ── */
+.stButton > button {
+  background: linear-gradient(135deg,#5d85ff,#7ca4ff) !important;
+  color: white !important; border: none !important;
+  border-radius: 14px !important; font-weight: 800 !important;
+  padding: 10px 18px !important; transition: .18s ease !important;
+  font-family: 'DM Sans', sans-serif !important;
+}
+.stButton > button:hover { filter: brightness(1.08) !important; }
+.stButton > button[kind="secondary"] {
+  background: linear-gradient(180deg,rgba(34,48,79,.95),rgba(24,35,57,.95)) !important;
+  border: 1px solid rgba(127,177,255,.16) !important;
+}
+
+/* ── EXPANDERS ── */
+.streamlit-expanderHeader {
+  background: rgba(17,26,45,.95) !important;
+  border: 1px solid rgba(255,255,255,.07) !important;
+  border-radius: 14px !important; color: #f5f9ff !important;
+  font-weight: 700 !important;
+}
+.streamlit-expanderContent {
+  background: rgba(12,19,33,.9) !important;
+  border: 1px solid rgba(255,255,255,.05) !important;
+  border-top: none !important; border-radius: 0 0 14px 14px !important;
+}
+
+/* ── INPUTS ── */
+.stSelectbox > div > div, .stTextInput > div > div > input {
+  background: #0f1728 !important;
+  border: 1px solid rgba(255,255,255,.08) !important;
+  border-radius: 12px !important; color: #f5f9ff !important;
+}
+.stTextArea textarea {
+  background: #0f1728 !important;
+  border: 1px solid rgba(255,255,255,.08) !important;
+  border-radius: 12px !important; color: #f5f9ff !important;
+}
+
+/* ── ALERTS ── */
 .stSuccess { background: rgba(79,255,176,.07) !important; border: 1px solid rgba(79,255,176,.2) !important; border-radius: 12px !important; }
 .stError   { background: rgba(255,107,125,.07) !important; border: 1px solid rgba(255,107,125,.2) !important; border-radius: 12px !important; }
-.stInfo    { background: rgba(85,230,255,.07) !important; border: 1px solid rgba(85,230,255,.2) !important; border-radius: 12px !important; }
-.stWarning { background: rgba(255,202,99,.07) !important; border: 1px solid rgba(255,202,99,.2) !important; border-radius: 12px !important; }
+.stInfo    { background: rgba(85,230,255,.07)  !important; border: 1px solid rgba(85,230,255,.2)  !important; border-radius: 12px !important; }
+.stWarning { background: rgba(255,202,99,.07)  !important; border: 1px solid rgba(255,202,99,.2)  !important; border-radius: 12px !important; }
 
 [data-testid="stDataFrame"] {
   border: 1px solid rgba(255,255,255,.06) !important;
-  border-radius: 14px !important;
-  overflow: hidden !important;
+  border-radius: 14px !important; overflow: hidden !important;
 }
 
-hr {
-  border-color: rgba(255,255,255,.07) !important;
-  margin: 1rem 0 !important;
-}
+hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; }
 
 [data-testid="stSidebar"] .stRadio > label { display: none; }
 [data-testid="stSidebar"] .stRadio div[role="radiogroup"] { gap: 4px !important; }
@@ -267,1357 +347,672 @@ hr {
 </svg>");
 }
 
-.rx-card {
-  background: linear-gradient(180deg, rgba(33,41,56,.88), rgba(24,31,44,.9));
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 24px;
-  padding: 18px;
-  margin-bottom: 14px;
-  box-shadow:
-    0 16px 40px rgba(0,0,0,.28),
-    0 0 0 1px rgba(255,255,255,.02) inset,
-    0 0 30px rgba(125,162,255,.08);
-  position: relative;
-  overflow: hidden;
-  backdrop-filter: blur(8px);
-}
-.rx-card.glow-green {
-  box-shadow:
-    0 16px 40px rgba(0,0,0,.28),
-    0 0 0 1px rgba(255,255,255,.03) inset,
-    0 0 26px rgba(157,255,138,.18),
-    0 0 0 2px rgba(157,255,138,.18);
-}
-.rx-card.glow-blue {
-  box-shadow:
-    0 16px 40px rgba(0,0,0,.28),
-    0 0 0 1px rgba(255,255,255,.03) inset,
-    0 0 26px rgba(103,233,255,.16),
-    0 0 0 2px rgba(103,233,255,.12);
-}
-.rx-card-title {
-  font-size: 1rem;
-  font-weight: 800;
-  color: #ffffff;
-  letter-spacing: -.02em;
-  margin-bottom: 4px;
-}
-.rx-card-desc {
-  font-size: .82rem;
-  color: var(--muted);
-  line-height: 1.5;
-  margin-bottom: 12px;
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,.03); }
+::-webkit-scrollbar-thumb { background: rgba(93,133,255,.35); border-radius: 999px; }
 
+#MainMenu, footer, header { visibility: hidden; }
+[data-testid="stToolbar"] { display: none; }
+
+/* ── CARD ── */
+.rx-card {
+  background: linear-gradient(180deg,rgba(18,27,45,.97),rgba(12,19,33,.97));
+  border: 1px solid rgba(120,150,230,.14);
+  border-radius: 22px; padding: 18px; margin-bottom: 12px;
+  box-shadow: 0 18px 42px rgba(0,0,0,.28);
+  position: relative; overflow: hidden;
+}
+.rx-card::before {
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent 40%);
+  pointer-events:none;
+}
+.rx-card-title { font-size:1rem;font-weight:800;color:#f5f9ff;letter-spacing:-.02em;margin-bottom:4px; }
+.rx-card-desc  { font-size:.8rem;color:#93a6c8;line-height:1.45;margin-bottom:12px; }
+
+/* ── TRACE / FEED / STATUS / TOOLS ── */
 .trace-line {
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:12px 14px;
-  border-radius:14px;
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 12px; border-radius:12px;
   border:1px solid rgba(255,255,255,.05);
-  background: rgba(10,16,27,.7);
-  font-size:.9rem;
-  margin-bottom:8px;
-  gap:12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  line-height: 1.6;
-  color:#dfe9ff;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.02);
+  background:rgba(6,10,18,.5);
+  font-size:.83rem; margin-bottom:8px; gap:12px;
 }
 .trace-left  { color:#d8e6fb; flex:1; }
 .trace-right { font-weight:800; color:#abf8ca; white-space:nowrap; }
 
 .feed-item {
-  display:flex;
-  gap:10px;
-  padding:10px 12px;
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,.05);
-  background: rgba(18,25,38,.76);
-  margin-bottom:8px;
+  display:flex; gap:10px; padding:10px 12px;
+  border-radius:12px; border:1px solid rgba(255,255,255,.05);
+  background:rgba(17,24,40,.78); margin-bottom:8px;
 }
-.feed-dot  {
-  width:9px;
-  height:9px;
-  border-radius:999px;
-  background: var(--green);
-  box-shadow:0 0 10px var(--green);
-  margin-top:7px;
-  flex:0 0 9px;
-}
-.feed-time { color:#8fa2c4; font-size:.73rem; }
-.feed-text { color:#e6efff; font-size:.83rem; line-height:1.45; }
+.feed-dot  { width:8px;height:8px;border-radius:999px;background:#55e6ff;box-shadow:0 0 10px #55e6ff;margin-top:7px;flex:0 0 8px; }
+.feed-time { color:#8da2c6;font-size:.72rem;margin-bottom:3px; }
+.feed-text { color:#dbe7f7;font-size:.8rem;line-height:1.45; }
 
 .status-item {
-  display:flex;
-  gap:10px;
-  align-items:flex-start;
-  padding:10px 12px;
-  border-radius:16px;
-  border:1px solid rgba(255,255,255,.06);
-  background: linear-gradient(180deg, rgba(28,36,51,.88), rgba(20,27,39,.92));
-  margin-bottom:8px;
+  display:flex; gap:10px; align-items:flex-start; padding:10px 12px;
+  border-radius:14px; border:1px solid rgba(255,255,255,.06);
+  background:rgba(17,24,40,.82); margin-bottom:8px;
 }
-.status-title { font-size:.85rem; font-weight:800; color:#f5f9ff; margin-bottom:3px; }
-.status-text  { font-size:.77rem; color:#93a6c8; line-height:1.45; }
-.dot { display:inline-block; width:10px; height:10px; border-radius:999px; margin-top:5px; flex:0 0 10px; }
+.status-title { font-size:.85rem;font-weight:800;color:#f5f9ff;margin-bottom:3px; }
+.status-text  { font-size:.77rem;color:#93a6c8;line-height:1.45; }
+.dot { display:inline-block;width:10px;height:10px;border-radius:999px;margin-top:5px;flex:0 0 10px; }
 .dot-pending { background:#7c8aa6; }
-.dot-running { background:#55e6ff; box-shadow:0 0 12px #55e6ff; }
-.dot-done    { background:#4fffb0; box-shadow:0 0 12px #4fffb0; }
-.dot-error   { background:#ff6b7d; box-shadow:0 0 12px #ff6b7d; }
+.dot-running { background:#55e6ff;box-shadow:0 0 12px #55e6ff; }
+.dot-done    { background:#4fffb0;box-shadow:0 0 12px #4fffb0; }
+.dot-error   { background:#ff6b7d;box-shadow:0 0 12px #ff6b7d; }
 
 .tool-card {
-  padding:14px;
-  border-radius:16px;
+  padding:14px; border-radius:14px;
   border:1px solid rgba(255,255,255,.06);
-  background: linear-gradient(180deg, rgba(28,36,51,.88), rgba(20,27,39,.92));
-  margin-bottom:8px;
+  background:rgba(17,24,40,.82); margin-bottom:8px;
 }
-.tool-head  { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
-.tool-title { font-size:.86rem; font-weight:800; color:#f5f9ff; }
-.tool-badge {
-  font-size:.72rem;
-  color:#bcecff;
-  border:1px solid rgba(85,230,255,.2);
-  background:rgba(85,230,255,.08);
-  border-radius:999px;
-  padding:4px 8px;
-}
-.tool-text {
-  font-size:.78rem;
-  line-height:1.5;
-  color:#93a6c8;
-  white-space:pre-wrap;
-  word-break:break-word;
-}
+.tool-head  { display:flex;justify-content:space-between;align-items:center;margin-bottom:8px; }
+.tool-title { font-size:.86rem;font-weight:800;color:#f5f9ff; }
+.tool-badge { font-size:.72rem;color:#bcecff;border:1px solid rgba(85,230,255,.2);background:rgba(85,230,255,.08);border-radius:999px;padding:4px 8px; }
+.tool-text  { font-size:.78rem;line-height:1.5;color:#93a6c8;white-space:pre-wrap;word-break:break-word; }
 
 .rx-pill {
-  display:inline-block;
-  border:1px solid rgba(255,255,255,.08);
-  background:rgba(17,26,45,.9);
-  border-radius:999px;
-  padding:5px 12px;
-  font-size:.75rem;
-  color:#dce7f7;
-  margin:3px;
+  display:inline-block; border:1px solid rgba(255,255,255,.08);
+  background:rgba(17,26,45,.9); border-radius:999px;
+  padding:5px 12px; font-size:.75rem; color:#dce7f7; margin:3px;
 }
 
-.cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
-.cal-day-name { text-align:center; font-size:.72rem; color:#93a6c8; font-weight:700; padding-bottom:6px; }
+/* ── CALENDAR ── */
+.cal-grid { display:grid;grid-template-columns:repeat(7,1fr);gap:8px; }
+.cal-day-name { text-align:center;font-size:.72rem;color:#93a6c8;font-weight:700;padding-bottom:6px; }
 .cal-cell {
-  min-height:70px;
-  border-radius:14px;
+  min-height:70px; border-radius:14px;
   border:1px solid rgba(255,255,255,.05);
-  background:rgba(12,18,32,.6);
-  padding:8px;
+  background:rgba(12,18,32,.6); padding:8px;
 }
 .cal-cell.dim   { opacity:.3; }
-.cal-cell.today { border-color:rgba(85,230,255,.35); box-shadow:0 0 14px rgba(85,230,255,.1); }
-.cal-date { font-size:.76rem; font-weight:800; color:#dce7f7; margin-bottom:4px; }
+.cal-cell.today { border-color:rgba(85,230,255,.35);box-shadow:0 0 14px rgba(85,230,255,.1); }
+.cal-date { font-size:.76rem;font-weight:800;color:#dce7f7;margin-bottom:4px; }
 .cal-pill {
-  border-radius:999px;
-  padding:3px 7px;
-  font-size:.67rem;
-  font-weight:700;
-  background:rgba(93,133,255,.18);
-  color:#ddecff;
+  border-radius:999px; padding:3px 7px; font-size:.67rem; font-weight:700;
+  background:rgba(93,133,255,.18); color:#ddecff;
   border:1px solid rgba(93,133,255,.16);
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  display:block;
-  margin-top:3px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  display:block;margin-top:3px;
 }
 
-.kanban-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+/* ── KANBAN ── */
+.kanban-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:10px; }
 .kan-col {
-  border-radius:16px;
-  border:1px solid rgba(255,255,255,.05);
-  background:rgba(13,19,33,.72);
-  padding:12px;
-  min-height:220px;
+  border-radius:16px; border:1px solid rgba(255,255,255,.05);
+  background:rgba(13,19,33,.72); padding:12px; min-height:220px;
 }
-.kan-head { display:flex; justify-content:space-between; margin-bottom:10px; font-size:.82rem; font-weight:800; color:#f5f9ff; }
+.kan-head { display:flex;justify-content:space-between;margin-bottom:10px;font-size:.82rem;font-weight:800;color:#f5f9ff; }
 .task-card {
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,.05);
-  background:rgba(18,27,45,.92);
-  padding:10px;
-  margin-bottom:8px;
+  border-radius:12px; border:1px solid rgba(255,255,255,.05);
+  background:rgba(18,27,45,.92); padding:10px; margin-bottom:8px;
 }
-.task-title { font-size:.8rem; font-weight:800; color:#f5f9ff; margin-bottom:3px; }
-.task-sub   { font-size:.72rem; color:#93a6c8; line-height:1.4; }
+.task-title { font-size:.8rem;font-weight:800;color:#f5f9ff;margin-bottom:3px; }
+.task-sub   { font-size:.72rem;color:#93a6c8;line-height:1.4; }
 
+/* ── CHAT MESSAGES ── */
 .chat-msg-user {
   background: linear-gradient(135deg,#5d85ff,#7ca4ff);
-  color: white;
-  border-radius: 14px;
-  padding: 10px 14px;
-  font-size: .86rem;
-  line-height: 1.5;
-  margin-bottom: 8px;
-  max-width: 90%;
-  margin-left: auto;
-  text-align: right;
+  color: white; border-radius: 14px; padding: 10px 14px;
+  font-size: .86rem; line-height: 1.5; margin-bottom: 8px;
+  max-width: 90%; margin-left: auto; text-align: right;
 }
 .chat-msg-bot {
-  background: rgba(17,26,45,.95);
+  background: #162035;                        /* solid instead of rgba */
   border: 1px solid rgba(255,255,255,.07);
-  color: #dbe7f7;
-  border-radius: 14px;
-  padding: 10px 14px;
-  font-size: .86rem;
-  line-height: 1.5;
-  margin-bottom: 8px;
+  color: #dbe7f7; border-radius: 14px; padding: 10px 14px;
+  font-size: .86rem; line-height: 1.5; margin-bottom: 8px;
 }
 .chat-msg-sys {
-  background: rgba(85,230,255,.07);
+  background: #0d2028;                        /* solid */
   border: 1px solid rgba(85,230,255,.14);
-  color: #9ecfdf;
-  border-radius: 14px;
-  padding: 8px 12px;
-  font-size: .78rem;
-  font-style: italic;
-  margin-bottom: 8px;
+  color: #9ecfdf; border-radius: 14px; padding: 8px 12px;
+  font-size: .78rem; font-style: italic; margin-bottom: 8px;
 }
 
-.bar-row {
-  display:grid;
-  grid-template-columns:130px 1fr 40px;
-  gap:10px;
-  align-items:center;
-  margin-bottom:10px;
-}
-.bar-label { font-size:.84rem; color:#d9e6f7; }
-.bar-track {
-  height:14px;
-  border-radius:999px;
-  background: rgba(255,255,255,.04);
-  border:1px solid rgba(255,255,255,.05);
-  overflow:hidden;
-}
-.bar-fill  {
-  height:100%;
-  border-radius:999px;
-  box-shadow: 0 0 16px currentColor;
-}
-.bar-value { text-align:right; font-weight:800; font-size:.8rem; color:#f5f9ff; }
+/* ── BARS ── */
+.bar-row { display:grid;grid-template-columns:130px 1fr 40px;gap:10px;align-items:center;margin-bottom:10px; }
+.bar-label { font-size:.84rem;color:#d9e6f7; }
+.bar-track { height:14px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);overflow:hidden; }
+.bar-fill  { height:100%;border-radius:999px; }
+.bar-value { text-align:right;font-weight:800;font-size:.8rem;color:#f5f9ff; }
 
 .side-label {
-  color:#8fa3c7;
-  font-size:.72rem;
-  font-weight:800;
-  text-transform:uppercase;
-  letter-spacing:.15em;
-  padding:0 4px;
-  margin-top:8px;
+  color:#7f90b1;font-size:.71rem;font-weight:800;
+  text-transform:uppercase;letter-spacing:.14em;padding:0 4px;margin-top:8px;
 }
 
+/* ── PRODUCT CARDS ── */
 .product-card {
-  border-radius:16px;
-  border:1px solid rgba(255,255,255,.06);
-  background: linear-gradient(180deg, rgba(28,36,51,.88), rgba(20,27,39,.92));
-  padding:16px;
-  margin-bottom:12px;
+  border-radius:16px;border:1px solid rgba(255,255,255,.06);
+  background:rgba(15,23,40,.86);padding:16px;margin-bottom:12px;
 }
 .mini-stat {
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,.05);
-  background:#111a2d;
-  padding:10px;
-  text-align:center;
+  border-radius:12px;border:1px solid rgba(255,255,255,.05);
+  background:#111a2d;padding:10px;text-align:center;
 }
-.mini-stat span   { display:block; color:#93a6c8; font-size:.72rem; margin-bottom:5px; }
-.mini-stat strong { font-size:.92rem; font-weight:800; color:#f5f9ff; }
-
-div.st-key-rx_chat_fab {
-  position: fixed !important;
-  right: 20px !important;
-  bottom: 28px !important;
-  z-index: 10000 !important;
-  width: 76px !important;
-  height: 76px !important;
-}
-div.st-key-rx_chat_fab > div,
-div.st-key-rx_chat_fab [data-testid="stVerticalBlock"] {
-  background: transparent !important;
-}
-div.st-key-rx_chat_fab button {
-  width: 76px !important;
-  height: 76px !important;
-  min-height: 76px !important;
-  border-radius: 999px !important;
-  padding: 0 !important;
-  font-size: 0 !important;
-  color: transparent !important;
-  text-indent: -9999px !important;
-  overflow: hidden !important;
-  line-height: 0 !important;
-  background: linear-gradient(135deg,#6f93ff,#6d97ff) !important;
-  box-shadow: 0 12px 42px rgba(93,133,255,.40), 0 0 34px rgba(93,133,255,.20) !important;
-  position: relative !important;
-  border: none !important;
-}
-div.st-key-rx_chat_fab button::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 30px;
-  height: 30px;
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
-  background-image: url("data:image/svg+xml;utf8,\
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'>\
-<path d='M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'/>\
-</svg>");
-}
-div.st-key-rx_chat_fab button:hover {
-  transform: scale(1.04);
-  filter: brightness(1.04) !important;
-}
-
-div.st-key-rx_chat_panel {
-  position: fixed !important;
-  right: 20px !important;
-  bottom: 120px !important;
-  z-index: 9999 !important;
-  width: 390px !important;
-  max-width: calc(100vw - 24px) !important;
-  background: #08111d !important;
-  border-radius: 22px !important;
-  border: 1px solid rgba(93,133,255,.22) !important;
-  box-shadow: 0 24px 64px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.04) !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-}
-div.st-key-rx_chat_panel > div,
-div.st-key-rx_chat_panel [data-testid="stVerticalBlock"],
-div.st-key-rx_chat_panel [data-testid="column"] {
-  background: #08111d !important;
-  box-shadow: none !important;
-  border: none !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-}
-.rx-chat-shell {
-  width: 100%;
-  border-radius: 22px;
-  overflow: hidden;
-  background: #08111d;
-  border: none;
-  box-shadow: none;
-}
-.rx-chat-header {
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:14px 16px;
-  border-bottom:1px solid rgba(255,255,255,.06);
-  background: rgba(13,22,40,.96);
-}
-.rx-chat-header-left {
-  display:flex;
-  align-items:center;
-  gap:10px;
-}
-.rx-chat-header-dot {
-  width:8px;
-  height:8px;
-  border-radius:999px;
-  background:#55e6ff;
-  box-shadow:0 0 8px #55e6ff;
-}
-.rx-chat-header-title {
-  font-weight:800;
-  font-size:.9rem;
-  color:#f5f9ff;
-}
-.rx-chat-messages {
-  max-height: 220px;
-  overflow-y: auto;
-  padding: 12px 12px 4px 12px;
-  background: rgba(8,14,25,.98);
-}
-.rx-chat-form {
-  padding: 12px;
-  border-top: 1px solid rgba(255,255,255,.06);
-  background: rgba(9,16,28,.98);
-}
-.rx-chat-sample-note {
-  font-size:.72rem;
-  color:#7f90b1;
-  margin-bottom:6px;
-  font-weight:700;
-  text-transform:uppercase;
-  letter-spacing:.10em;
-}
-div.st-key-rx_chat_close button {
-  width: 30px !important;
-  height: 30px !important;
-  min-height: 30px !important;
-  border-radius: 8px !important;
-  padding: 0 !important;
-  font-size: 18px !important;
-  background: rgba(255,255,255,.04) !important;
-  border: 1px solid rgba(255,255,255,.10) !important;
-}
-div.st-key-rx_chat_close button:hover {
-  background: rgba(255,107,125,.12) !important;
-  border-color: rgba(255,107,125,.2) !important;
-  color: #ff6b7d !important;
-}
-div.st-key-rx_chat_panel .stSelectbox,
-div.st-key-rx_chat_panel .stTextArea,
-div.st-key-rx_chat_panel .stButton {
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-}
-div.st-key-rx_chat_panel .stTextArea textarea {
-  min-height: 110px !important;
-}
-div.st-key-rx_chat_panel .stSelectbox > div > div,
-div.st-key-rx_chat_panel .stTextArea textarea {
-  background: #0c1526 !important;
-}
-div.st-key-rx_chat_panel .stButton button {
-  height: 46px !important;
-  min-height: 46px !important;
-}
-
-@media (max-width: 900px) {
-  div.st-key-rx_chat_panel {
-    width: calc(100vw - 24px) !important;
-    right: 12px !important;
-    bottom: 108px !important;
-  }
-  div.st-key-rx_chat_fab {
-    right: 12px !important;
-    bottom: 18px !important;
-  }
-}
+.mini-stat span   { display:block;color:#93a6c8;font-size:.72rem;margin-bottom:5px; }
+.mini-stat strong { font-size:.92rem;font-weight:800;color:#f5f9ff; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── HELPERS ─────────────────────────────────────────────────────────────────
+# ── Session state ────────────────────────────────────────────────────────────
 
-def esc(x):
-    return html.escape("" if x is None else str(x))
+def _default_statuses():
+    return [
+        {"key":"listener",     "title":"Listener Agent",               "state":"pending", "text":"Waiting for complaint."},
+        {"key":"analyst",      "title":"Analyzer Agent",               "state":"pending", "text":"Waiting for eligibility check."},
+        {"key":"decision",     "title":"Decision Agent",               "state":"pending", "text":"Waiting for resolution selection."},
+        {"key":"database",     "title":"Database",                     "state":"pending", "text":"Waiting for case log."},
+        {"key":"notes",        "title":"Notes",                        "state":"pending", "text":"Waiting for notes visibility."},
+        {"key":"tasks",        "title":"Tasks",                        "state":"pending", "text":"Waiting for task visibility."},
+        {"key":"calendar",     "title":"Calendar",                     "state":"pending", "text":"Waiting for follow-up schedule."},
+        {"key":"manufacturer", "title":"Communication / Manufacturer", "state":"pending", "text":"Waiting for manufacturer state."},
+        {"key":"tracker",      "title":"Tracking Agent",               "state":"pending", "text":"Tracker not run yet."},
+        {"key":"customer",     "title":"Customer Portal",              "state":"pending", "text":"No final response yet."},
+    ]
 
-def now_label():
-    return datetime.now().strftime("%B %d, %Y  %H:%M:%S")
-
-def safe_json(value, fallback=None):
-    try:
-        if isinstance(value, str):
-            return json.loads(value)
-        return value
-    except Exception:
-        return fallback if fallback is not None else {}
-
-def api_get(path, params=None):
-    try:
-        r = requests.get(f"{API_BASE}{path}", params=params, timeout=REQUEST_TIMEOUT)
-        r.raise_for_status()
-        if "application/json" in r.headers.get("content-type", ""):
-            return True, r.json()
-        return True, {"text": r.text}
-    except Exception as e:
-        return False, {"error": str(e)}
-
-def api_post(path, payload=None):
-    try:
-        r = requests.post(f"{API_BASE}{path}", json=payload or {}, timeout=REQUEST_TIMEOUT)
-        r.raise_for_status()
-        if "application/json" in r.headers.get("content-type", ""):
-            return True, r.json()
-        return True, {"text": r.text}
-    except Exception as e:
-        return False, {"error": str(e)}
-
-def pull_list(data, *keys):
-    for k in keys:
-        if isinstance(data, dict) and isinstance(data.get(k), list):
-            return data.get(k)
-    return []
-
-@st.cache_data(ttl=2)
-def fetch_all_data():
-    ok_c, c_data = api_get("/complaints")
-    ok_p, p_data = api_get("/products")
-    ok_d, d_data = api_get("/dashboard")
-    ok_h, h_data = api_get("/health")
-
-    complaints = []
-    pending = []
-    products = []
-    summary = {}
-    api_ok = ok_h or ok_c or ok_p or ok_d
-
-    if ok_c:
-        if isinstance(c_data, list):
-            complaints = c_data
-        elif isinstance(c_data, dict):
-            complaints = pull_list(c_data, "complaints", "items", "data")
-            pending = pull_list(c_data, "pending", "pending_cases", "manufacturer_pending")
-
-    if ok_p:
-        if isinstance(p_data, list):
-            products = p_data
-        elif isinstance(p_data, dict):
-            products = pull_list(p_data, "products", "items", "data", "product_stats")
-
-    if ok_d and isinstance(d_data, dict):
-        summary = d_data.get("data", d_data)
-
+def _default_tools():
     return {
-        "api_ok": api_ok,
-        "health": h_data if ok_h else {},
-        "complaints": complaints,
-        "pending": pending,
-        "products": products,
-        "summary": summary,
-    }
-def complaint_resolved_value(c: dict) -> str:
-    # only truly resolved if one of these explicit close/fix fields exists
-    if c.get("loop_closed_at"):
-        return "Yes"
-    if c.get("customer_notified_of_fix"):
-        return "Yes"
-    if c.get("manufacturer_resolved"):
-        return "Yes"
-    if c.get("is_resolved"):
-        return "Yes"
-
-    return "No"
-
-
-def complaint_stage_value(c: dict) -> str:
-    if c.get("loop_closed_at") or c.get("customer_notified_of_fix") or c.get("manufacturer_resolved") or c.get("is_resolved"):
-        return "Resolved"
-
-    if c.get("manufacturer_contacted") or str(c.get("resolution") or "").strip().lower() == "escalate":
-        return "Manufacturer"
-
-    resolution = str(c.get("resolution") or c.get("status") or "").strip().lower()
-    if resolution in {"replacement", "full_refund", "partial_refund"}:
-        return "Decision Made"
-
-    return "Analyzed"
-
-def mark_product_rectified(product_name: str) -> dict:
-    try:
-        r = requests.post(
-            f"{API_BASE}/manufacturer/resolve",
-            json={"product_name": product_name},
-            timeout=30,
-        )
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-def complaint_eligibility_value(c: dict) -> str:
-    # real backend fields if present
-    if c.get("eligible") is True:
-        return "Eligible"
-    if c.get("eligible") is False:
-        return "Not Eligible"
-
-    # demo fallback logic
-    resolution = str(c.get("resolution") or c.get("status") or "").strip().lower()
-    if resolution in {"replacement", "full_refund", "partial_refund"}:
-        return "Eligible"
-    if resolution == "escalate":
-        return "Under Review"
-
-    return "Under Review"
-
-
-def complaint_action_value(c: dict) -> str:
-    # real backend fields if present
-    action = c.get("recommended_action") or c.get("action_taken") or c.get("decision")
-    if action:
-        return str(action).replace("_", " ").title()
-
-    # demo fallback from resolution
-    resolution = str(c.get("resolution") or c.get("status") or "").strip().lower()
-    if resolution == "replacement":
-        return "Replacement"
-    if resolution == "full_refund":
-        return "Full Refund"
-    if resolution == "partial_refund":
-        return "Partial Refund"
-    if resolution == "escalate":
-        return "Escalate to Manufacturer"
-
-    return "Pending Review"
-
-
-def complaint_resolution_display(c: dict) -> str:
-    resolution = c.get("resolution") or c.get("status") or "—"
-    return str(resolution).replace("_", " ").title()
-def verify_product_eligibility(product_name: str) -> dict:
-    """
-    Demo-friendly wrapper.
-    If backend endpoint exists, use it.
-    If not, return a fake/demo result so judges can see the flow.
-    """
-    ok, res = api_post("/eligibility/verify", {"product_name": product_name})
-    if ok:
-        return res
-
-    # demo fallback
-    return {
-        "success": True,
-        "demo": True,
-        "eligible": True,
-        "reason": f"{product_name} is within policy and eligible for support action."
+        "notes":        {"title":"Notes",        "badge":"Connected", "body":"No notes loaded yet."},
+        "tasks":        {"title":"Tasks",         "badge":"Connected", "body":"No tasks loaded yet."},
+        "calendar":     {"title":"Calendar",      "badge":"Connected", "body":"No calendar items loaded yet."},
+        "manufacturer": {"title":"Manufacturer",  "badge":"Connected", "body":"No manufacturer data loaded yet."},
+        "tracker":      {"title":"Tracker",       "badge":"Connected", "body":"Tracker has not been run yet."},
     }
 
-
-def issue_product_refund(product_name: str) -> dict:
-    """
-    Demo-friendly wrapper.
-    If backend endpoint exists, use it.
-    If not, return a fake/demo result.
-    """
-    ok, res = api_post("/refund/issue", {"product_name": product_name})
-    if ok:
-        return res
-
-    return {
-        "success": True,
-        "demo": True,
-        "action": "refund",
-        "message": f"Refund initiated for {product_name}."
+def _init_state():
+    defaults = {
+        "chat_messages": [
+            {"type":"sys",  "text":"ResolveX chat ready"},
+            {"type":"bot",  "text":"Hi! Tell me what happened with your order and I'll help you through it."},
+        ],
+        "trace_items":       [],
+        "activity_items":    [],
+        "last_product":      None,
+        "last_complaint_id": None,
+        "statuses":          _default_statuses(),
+        "tool_panels":       _default_tools(),
+        "chat_open":         False,
+        "sample_choice":     "Custom...",
     }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
+_init_state()
 
-def issue_product_replacement(product_name: str) -> dict:
-    """
-    Demo-friendly wrapper.
-    If backend endpoint exists, use it.
-    If not, return a fake/demo result.
-    """
-    ok, res = api_post("/replacement/issue", {"product_name": product_name})
-    if ok:
-        return res
+# ── API helpers ──────────────────────────────────────────────────────────────
 
-    return {
-        "success": True,
-        "demo": True,
-        "action": "replacement",
-        "message": f"Replacement initiated for {product_name}."
-    }
-def status_color(status):
-    status = str(status or "").lower()
-    if status in {"running", "active", "in_progress"}:
-        return "running"
-    if status in {"done", "complete", "completed", "ok", "healthy", "connected"}:
-        return "done"
-    if status in {"error", "failed", "down"}:
-        return "error"
-    return "pending"
+@st.cache_data(ttl=30)
+def fetch_dashboard() -> dict:
+    try:
+        r = requests.get(f"{API_BASE}/dashboard", timeout=10); r.raise_for_status()
+        return r.json().get("data", r.json()) or {}
+    except: return {}
 
-def append_chat(kind, text):
-    st.session_state.chat_messages.append({
-        "kind": kind,
-        "text": text,
-        "ts": datetime.now().strftime("%H:%M")
-    })
+@st.cache_data(ttl=30)
+def fetch_complaints() -> list:
+    try:
+        r = requests.get(f"{API_BASE}/complaints", timeout=10); r.raise_for_status()
+        d = r.json(); return d.get("complaints", d.get("data", []))
+    except: return []
+
+@st.cache_data(ttl=30)
+def fetch_products() -> list:
+    try:
+        r = requests.get(f"{API_BASE}/products", timeout=10); r.raise_for_status()
+        d = r.json(); return d.get("products", d.get("product_stats", d.get("data", [])))
+    except: return []
+
+@st.cache_data(ttl=30)
+def fetch_pending() -> list:
+    try:
+        r = requests.get(f"{API_BASE}/manufacturer/pending", timeout=10); r.raise_for_status()
+        d = r.json(); return d.get("pending", d.get("pending_contacts", d.get("data", [])))
+    except: return []
+
+def api_get(path):
+    try:
+        r = requests.get(f"{API_BASE}{path}", timeout=10)
+        return r.ok, r.json() if r.ok else {}
+    except: return False, {}
+
+def api_post(path, payload):
+    try:
+        r = requests.post(f"{API_BASE}{path}", json=payload, timeout=90)
+        return r.ok, r.json() if r.ok else {}
+    except Exception as e: return False, {"error": str(e)}
+
+def check_api() -> bool:
+    try: return requests.get(f"{API_BASE}/health", timeout=4).ok
+    except: return False
+
+# ── State helpers ────────────────────────────────────────────────────────────
 
 def push_trace(text, status="OK"):
-    st.session_state.trace_lines.insert(0, {
-        "text": text,
-        "status": status,
-        "ts": datetime.now().strftime("%H:%M:%S")
-    })
-    st.session_state.trace_lines = st.session_state.trace_lines[:12]
+    st.session_state.trace_items.insert(0, {"text": text, "status": status})
+    st.session_state.trace_items = st.session_state.trace_items[:8]
 
 def push_activity(text):
-    st.session_state.activity_feed.insert(0, {
-        "text": text,
-        "ts": datetime.now().strftime("%H:%M:%S")
-    })
-    st.session_state.activity_feed = st.session_state.activity_feed[:14]
-
-def set_status(name, state, desc):
-    st.session_state.system_status[name] = {"state": state, "desc": desc}
-
-def set_tool(name, content):
-    st.session_state.tool_panels[name] = content
-
-def infer_counts(complaints, summary, pending):
-    total_c = len(complaints)
-
-    active = sum(
-        1 for c in complaints
-        if not c.get("loop_closed_at")
-        and str(c.get("status", "")).lower() not in {"closed", "resolved", "complete", "completed"}
-    )
-    resolved = sum(
-    1 for c in complaints
-    if (
-        c.get("loop_closed_at")
-        or c.get("customer_notified_of_fix")
-        or c.get("manufacturer_resolved")
-        or c.get("is_resolved")
-        or str(c.get("status", "")).lower() in {"closed", "resolved", "complete", "completed"}
-    )
-)
-    
-    escalated = sum(
-        1 for c in complaints
-        if c.get("escalated")
-        or c.get("manufacturer_contacted")
-        or str(c.get("decision", "")).lower() == "escalate"
-    )
-
-    overdue = 0
-    now_dt = datetime.now()
-    for c in complaints:
-        due = c.get("eta") or c.get("sla_due") or c.get("due_date")
-        if not due:
-            continue
-        try:
-            due_dt = datetime.fromisoformat(str(due).replace("Z", "+00:00").replace("+00:00", ""))
-            closed = c.get("loop_closed_at") or c.get("resolved_at")
-            if due_dt < now_dt and not closed:
-                overdue += 1
-        except Exception:
-            pass
-
-    if summary.get("total_complaints") is not None:
-        total_c = summary.get("total_complaints", total_c)
-    if summary.get("active_cases") is not None:
-        active = summary.get("active_cases", active)
-    if summary.get("resolved") is not None:
-        resolved = summary.get("resolved", resolved)
-    if summary.get("escalated") is not None:
-        escalated = summary.get("escalated", escalated)
-    if summary.get("sla_overdue") is not None:
-        overdue = summary.get("sla_overdue", overdue)
-
-    manufacturer_cases = len(pending) or summary.get("manufacturer_contacted", 0)
-    return total_c, active, resolved, escalated, overdue, manufacturer_cases
-
-def compute_issue_breakdown(complaints):
-    out = {}
-    for c in complaints:
-        key = c.get("issue_type") or c.get("category") or c.get("complaint_type") or c.get("type") or "General"
-        out[key] = out.get(key, 0) + 1
-    if not out:
-        out = {"General": 1}
-    return dict(sorted(out.items(), key=lambda x: x[1], reverse=True)[:6])
-
-def compute_resolution_breakdown(complaints):
-    out = {}
-    for c in complaints:
-        key = c.get("resolution") or c.get("decision") or c.get("outcome") or c.get("status") or "Pending"
-        key = str(key).replace("_", " ").title()
-        out[key] = out.get(key, 0) + 1
-    if not out:
-        out = {"Pending": 1}
-    return dict(sorted(out.items(), key=lambda x: x[1], reverse=True)[:6])
-
-
-def build_calendar_items(complaints, pending):
-    items = {}
-
-    # complaint due dates
-    for c in complaints:
-        if not c.get("created_at") or not c.get("estimated_resolution_days"):
-            continue
-        try:
-            created = datetime.fromisoformat(str(c["created_at"]).replace("Z", "+00:00"))
-            due = created + timedelta(days=int(c["estimated_resolution_days"] or 0))
-            d = due.date().isoformat()
-            label = f"{c.get('product_name','Case')} due"
-            items.setdefault(d, []).append(label)
-        except Exception:
-            pass
-
-    # manufacturer follow-ups
-    for m in pending:
-        base = m.get("updated_at") or m.get("contacted_at") or m.get("created_at")
-        if not base:
-            continue
-        try:
-            dtime = datetime.fromisoformat(str(base).replace("Z", "+00:00")) + timedelta(days=1)
-            d = dtime.date().isoformat()
-            label = f"{m.get('product_name','Manufacturer')} follow-up"
-            items.setdefault(d, []).append(label)
-        except Exception:
-            pass
-
-    return items
-
-def derive_case_status(c: dict) -> str:
-    manufacturer_resolved = bool(c.get("manufacturer_resolved"))
-    loop_closed = bool(c.get("loop_closed_at"))
-    manufacturer_contacted = bool(c.get("manufacturer_contacted"))
-    resolution = (c.get("resolution") or c.get("status") or "").strip().lower()
-    priority = (c.get("priority") or c.get("urgency_level") or "").strip().lower()
-
-    if manufacturer_resolved or loop_closed:
-        return "Resolved"
-
-    if manufacturer_contacted or resolution == "escalate":
-        return "Escalated to Manufacturer"
-
-    if resolution == "replacement":
-        return "Replacement Approved"
-
-    if resolution == "full_refund":
-        return "Full Refund Approved"
-
-    if resolution == "partial_refund":
-        return "Partial Refund Approved"
-
-    if resolution:
-        return f"Analyzed • {resolution.replace('_', ' ').title()}"
-
-    if priority in {"high", "urgent"}:
-        return "High Priority Review"
-
-    return "Analyzed"
-
-
-def derive_case_stage(c: dict) -> str:
-    manufacturer_resolved = bool(c.get("manufacturer_resolved"))
-    loop_closed = bool(c.get("loop_closed_at"))
-    manufacturer_contacted = bool(c.get("manufacturer_contacted"))
-    resolution = (c.get("resolution") or c.get("status") or "").strip().lower()
-
-    if manufacturer_resolved or loop_closed:
-        return "Resolved"
-
-    if manufacturer_contacted or resolution == "escalate":
-        return "Manufacturer"
-
-    if resolution in {"replacement", "full_refund", "partial_refund"}:
-        return "Decision Made"
-
-    return "Analyzed"
-
-
-def yes_no(v):
-    return "Yes" if bool(v) else "No"
-def build_kanban(complaints):
-    cols = {"Analyzed": [], "Decision Made": [], "Manufacturer": [], "Resolved": []}
-
-    deduped = []
-    seen = set()
-    for c in complaints:
-        key = c.get("complaint_id") or (
-            c.get("order_id"),
-            c.get("product_name") or c.get("product"),
-            c.get("issue_type") or c.get("category"),
-            c.get("complaint_summary") or c.get("summary") or c.get("complaint"),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(c)
-
-    for c in deduped[:24]:
-        stage = derive_case_stage(c)
-        title = c.get("product_name") or c.get("product") or c.get("order_id") or "Case"
-        sub = derive_case_status(c)
-        item = {"title": title, "sub": sub}
-
-        if stage == "Resolved":
-            cols["Resolved"].append(item)
-        elif stage == "Manufacturer":
-            cols["Manufacturer"].append(item)
-        elif stage == "Decision Made":
-            cols["Decision Made"].append(item)
-        else:
-            cols["Analyzed"].append(item)
-
-    return cols
-
-
-def dedupe_cases(cases):
-    seen = set()
-    out = []
-    for c in cases:
-        key = c.get("complaint_id") or (
-            c.get("order_id"),
-            c.get("product_name") or c.get("product"),
-            c.get("issue_type") or c.get("category"),
-            c.get("status") or c.get("resolution"),
-            c.get("complaint") or c.get("summary"),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(c)
-    return out
-
-def latest_case_data():
-    latest_data = fetch_all_data()
-    latest_complaints = dedupe_cases(latest_data.get("complaints", []))
-    latest_products = latest_data.get("products", [])
-
-    latest_case = latest_complaints[0] if latest_complaints else {}
-    latest_product_stats = {}
-
-    product_name = latest_case.get("product_name") or latest_case.get("product")
-    if product_name and latest_products:
-        for p in latest_products:
-            p_name = p.get("name") or p.get("product_name")
-            if p_name == product_name:
-                latest_product_stats = p
-                break
-
-    return latest_case, latest_product_stats
-
-def build_notes_text(case: dict) -> str:
-    if not case:
-        return "No case notes yet."
-
-    product_name = case.get("product_name") or case.get("product") or "Unknown"
-    order_id = case.get("order_id") or "Not provided"
-    issue_type = case.get("issue_type") or case.get("category") or "other"
-    summary = case.get("complaint_summary") or case.get("summary") or case.get("complaint") or "No summary available."
-    resolution = case.get("resolution") or case.get("decision") or "Pending"
-    reason = case.get("decision_reason") or "No decision reason available."
-    priority = case.get("priority") or case.get("urgency_level") or "medium"
-    eta = case.get("estimated_resolution_days") or case.get("eta") or "N/A"
-
-    return (
-        f"Product: {product_name}\n"
-        f"Order ID: {order_id}\n"
-        f"Issue Type: {issue_type}\n"
-        f"Priority: {priority}\n"
-        f"Resolution: {resolution}\n"
-        f"ETA: {eta}\n"
-        f"Summary: {summary}\n"
-        f"Reason: {reason}"
-    )
-
-def build_tracker_text(result: dict, product_name: str) -> str:
-    if not result:
-        return f"Tracker ran for {product_name}, but no details were returned."
-    parsed = safe_json(result, {})
-    status = parsed.get("status") or parsed.get("result", {}).get("status") or "completed"
-    return f"Tracker status: {status}\nProduct: {product_name}"
-
-def build_manufacturer_text(case: dict, product_stats: dict) -> str:
-    if not case:
-        return "No manufacturer activity yet."
-
-    product_name = case.get("product_name") or case.get("product") or "Unknown"
-    manufacturer_contacted = case.get("manufacturer_contacted") or product_stats.get("manufacturer_contacted", False)
-    manufacturer_resolved = case.get("manufacturer_resolved") or product_stats.get("manufacturer_resolved", False)
-
-    return (
-        f"Product: {product_name}\n"
-        f"Manufacturer Contacted: {'Yes' if manufacturer_contacted else 'No'}\n"
-        f"Manufacturer Resolved: {'Yes' if manufacturer_resolved else 'No'}"
-    )
-
-def render_trace_html():
-    rows = st.session_state.trace_lines or [{"text": "System initialized.", "status": "OK"}]
-    return "".join(
-        f'<div class="trace-line"><div class="trace-left">{esc(r.get("text",""))}</div><div class="trace-right">{esc(r.get("status","OK"))}</div></div>'
-        for r in rows
-    )
-
-def render_activity_html():
-    rows = st.session_state.activity_feed or [{"text": "Awaiting events.", "ts": datetime.now().strftime("%H:%M:%S")}]
-    out = []
-    for row in rows:
-        out.append(
-            f'''
-            <div class="feed-item">
-              <div class="feed-dot"></div>
-              <div>
-                <div class="feed-time">{esc(row.get("ts",""))}</div>
-                <div class="feed-text">{esc(row.get("text",""))}</div>
-              </div>
-            </div>
-            '''
-        )
-    return "".join(out)
-
-def render_status_html():
-    items = st.session_state.system_status
-    order = ["listener", "analyst", "decision", "manufacturer", "tracker", "database"]
-    names = {
-        "listener": "Listener Agent",
-        "analyst": "Analyst Agent",
-        "decision": "Decision Agent",
-        "manufacturer": "Manufacturer Agent",
-        "tracker": "Tracker Agent",
-        "database": "Database Agent",
-    }
-    out = []
-    for key in order:
-        data = items.get(key, {"state": "pending", "desc": "Waiting..."})
-        cls = status_color(data.get("state"))
-        out.append(
-            f'''
-            <div class="status-item">
-              <span class="dot dot-{cls}"></span>
-              <div>
-                <div class="status-title">{esc(names.get(key, key.title()))}</div>
-                <div class="status-text">{esc(data.get("desc",""))}</div>
-              </div>
-            </div>
-            '''
-        )
-    return "".join(out)
-def render_tools_html():
-    panels = st.session_state.tool_panels
-    labels = {
-        "notes": "Notes",
-        "tasks": "Tasks",
-        "manufacturer": "Manufacturer",
-        "tracker": "Tracker",
-        "calendar": "Calendar",
-    }
-    badges = {
-        "notes": "Memory",
-        "tasks": "Board",
-        "manufacturer": "Escalation",
-        "tracker": "Follow-up",
-        "calendar": "Schedule",
-    }
-
-    out = []
-    for key in ["notes", "tasks", "manufacturer", "tracker", "calendar"]:
-        body = str(panels.get(key, "No output yet."))
-
-        # strip obvious broken HTML leftovers from older versions
-        if "<div" in body or "</div>" in body:
-            body = body.replace("<div", "").replace("</div>", "")
-            body = body.replace('class="tool-card"', "")
-            body = body.replace('class="tool-head"', "")
-            body = body.replace('class="tool-title"', "")
-            body = body.replace('class="tool-badge"', "")
-            body = body.replace('class="tool-text"', "")
-            body = body.strip()
-
-        out.append(
-            f'''
-            <div class="tool-card">
-              <div class="tool-head">
-                <div class="tool-title">{esc(labels[key])}</div>
-                <div class="tool-badge">{esc(badges[key])}</div>
-              </div>
-              <div class="tool-text">{esc(body)}</div>
-            </div>
-            '''
-        )
-    return "".join(out)
-
-
-def render_chat_html():
-    rows = st.session_state.chat_messages or [{"kind": "bot", "text": "Hi, I’m ResolveX Assistant. Tell me what happened and I’ll help you resolve it."}]
-    out = []
-    for row in rows[-12:]:
-        kind = row.get("kind", "bot")
-        klass = "chat-msg-bot"
-        if kind == "user":
-            klass = "chat-msg-user"
-        elif kind == "sys":
-            klass = "chat-msg-sys"
-        out.append(f'<div class="{klass}">{esc(row.get("text",""))}</div>')
-    return "".join(out)
-
-def render_bars_html(data):
-    vals = list(data.values()) or [1]
-    max_v = max(vals) if vals else 1
-    fills = [
-        "linear-gradient(90deg,#5d85ff,#7ca4ff)",
-        "linear-gradient(90deg,#55e6ff,#80f1ff)",
-        "linear-gradient(90deg,#4fffb0,#7effc9)",
-        "linear-gradient(90deg,#ca6dff,#e19bff)",
-        "linear-gradient(90deg,#ff9f66,#ffbe8f)",
-        "linear-gradient(90deg,#ffd166,#ffe39a)",
-    ]
-    rows = []
-    for i, (label, value) in enumerate(data.items()):
-        width = max(8, int((value / max_v) * 100)) if max_v else 0
-        rows.append(
-            f'''
-            <div class="bar-row">
-              <div class="bar-label">{esc(label)}</div>
-              <div class="bar-track"><div class="bar-fill" style="width:{width}%;background:{fills[i % len(fills)]};"></div></div>
-              <div class="bar-value">{esc(value)}</div>
-            </div>
-            '''
-        )
-    return "".join(rows)
-
-def render_donut_html(data):
-    total = sum(data.values()) or 1
-    radius = 72
-    stroke = 18
-    circumference = 2 * math.pi * radius
-    colors = ["#5d85ff", "#55e6ff", "#4fffb0", "#ca6dff", "#ff9f66", "#ffd166"]
-    acc = 0.0
-    segs = []
-    legend = []
-
-    for i, (label, value) in enumerate(data.items()):
-        frac = value / total
-        dash = frac * circumference
-        gap = circumference - dash
-        color = colors[i % len(colors)]
-        offset = -acc * circumference
-        acc += frac
-        segs.append(
-            f'<circle cx="100" cy="100" r="{radius}" fill="none" stroke="{color}" stroke-width="{stroke}" stroke-dasharray="{dash} {gap}" stroke-dashoffset="{offset}" transform="rotate(-90 100 100)"></circle>'
-        )
-        legend.append(
-            f'<div style="display:flex;align-items:center;justify-content:space-between;margin:8px 0;">'
-            f'<div style="display:flex;align-items:center;gap:8px;color:#dce7f7;font-size:.8rem;">'
-            f'<span style="width:10px;height:10px;border-radius:999px;background:{color};display:inline-block;"></span>{esc(label)}</div>'
-            f'<div style="color:#f5f9ff;font-weight:800;font-size:.8rem;">{value}</div></div>'
-        )
-
-    return f'''
-    <div style="display:grid;grid-template-columns:220px 1fr;gap:10px;align-items:center;">
-      <div style="display:flex;justify-content:center;">
-        <svg width="220" height="220" viewBox="0 0 200 200">
-          <circle cx="100" cy="100" r="{radius}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="{stroke}"></circle>
-          {''.join(segs)}
-          <text x="100" y="95" text-anchor="middle" fill="#93a6c8" font-size="12" font-weight="700">Total</text>
-          <text x="100" y="118" text-anchor="middle" fill="#f5f9ff" font-size="24" font-weight="800">{total}</text>
-        </svg>
-      </div>
-      <div>{''.join(legend)}</div>
-    </div>
-    '''
-
-def render_calendar_html(items):
-    now = datetime.now()
-    y, m = now.year, now.month
-    cal = cal_mod.Calendar(firstweekday=0)
-    month_days = list(cal.monthdatescalendar(y, m))
-    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-    head = "".join([f'<div class="cal-day-name">{d}</div>' for d in day_names])
-    cells = []
-    for week in month_days:
-        for d in week:
-            cls = "cal-cell"
-            if d.month != m:
-                cls += " dim"
-            if d == now.date():
-                cls += " today"
-            key = d.isoformat()
-            pills = "".join(f'<span class="cal-pill">{esc(x)[:20]}</span>' for x in items.get(key, [])[:3])
-            cells.append(f'<div class="{cls}"><div class="cal-date">{d.day}</div>{pills}</div>')
-    return f'<div class="cal-grid">{head}{"".join(cells)}</div>'
-def get_pending_manufacturer_contacts():
-    ok, data = api_get("/manufacturer/pending")
-    if ok and isinstance(data, dict):
-        return data.get("pending", data.get("items", data.get("data", [])))
-    if ok and isinstance(data, list):
-        return data
-    return []
-def render_kanban_html(columns):
-    html_parts = ['<div class="kanban-grid">']
-    for col_name, items in columns.items():
-        html_parts.append(
-            f'<div class="kan-col"><div class="kan-head"><span>{esc(col_name)}</span><span>{len(items)}</span></div>'
-        )
-
-        if not items:
-            html_parts.append('<div class="task-card"><div class="task-sub">No items</div></div>')
-        else:
-            for item in items:
-                title = esc(item.get("title", "Case"))
-                sub = esc(item.get("sub", ""))
-                html_parts.append(
-                    f'<div class="task-card"><div class="task-title">{title}</div><div class="task-sub">{sub}</div></div>'
-                )
-        html_parts.append('</div>')
-
-    html_parts.append('</div>')
-    return "".join(html_parts)
+    st.session_state.activity_items.insert(0, {"time": datetime.now().strftime("%H:%M:%S"), "text": text})
+    st.session_state.activity_items = st.session_state.activity_items[:16]
+
+def set_status(key, state, text):
+    for s in st.session_state.statuses:
+        if s["key"] == key:
+            s["state"] = state; s["text"] = text; break
+
+def set_tool(key, body, badge="Connected"):
+    if key in st.session_state.tool_panels:
+        st.session_state.tool_panels[key]["body"] = body
+        st.session_state.tool_panels[key]["badge"] = badge
+
+def append_chat(msg_type, text):
+    st.session_state.chat_messages.append({"type": msg_type, "text": text})
 
 def reset_session():
-    st.session_state.chat_messages = [
-        {"kind": "bot", "text": "Hi, I’m ResolveX Assistant. Tell me what happened and I’ll help you resolve it."}
-    ]
-    st.session_state.trace_lines = [{"text": "System reset.", "status": "OK"}]
-    st.session_state.activity_feed = [{"text": "Dashboard reset.", "ts": datetime.now().strftime("%H:%M:%S")}]
-    st.session_state.last_product = None
-    st.session_state.complaint_text = ""
-    st.session_state.sample_choice = "Custom..."
-    st.session_state.tool_panels = {
-        "notes": "No case notes yet.",
-        "tasks": "No tasks yet.",
-        "manufacturer": "No manufacturer activity yet.",
-        "tracker": "No tracker output yet.",
-        "calendar": "No calendar items yet.",
-    }
-    st.session_state.system_status = {
-        "listener": {"state": "pending", "desc": "Awaiting complaint input."},
-        "analyst": {"state": "pending", "desc": "Awaiting complaint analysis."},
-        "decision": {"state": "pending", "desc": "Awaiting routing decision."},
-        "manufacturer": {"state": "pending", "desc": "No manufacturer escalation yet."},
-        "tracker": {"state": "pending", "desc": "No follow-up triggered yet."},
-        "database": {"state": "pending", "desc": "Waiting to log case data."},
-    }
-
-    for key in ["rx_chat_textarea", "rx_chat_sample_select"]:
+    for k in [
+        "chat_messages", "trace_items", "activity_items", "last_product",
+        "last_complaint_id", "statuses", "tool_panels",
+        "chat_open", "sample_choice"
+    ]:
+        if k in st.session_state:
+            del st.session_state[k]
+    _init_state()
+    for key in ["chat_input_box", "chat_sample_select"]:
         if key in st.session_state:
             del st.session_state[key]
 
-def do_submit_complaint(text):
-    append_chat("user", text)
-    append_chat("sys", "Submitting complaint...")
-    push_trace("[COMPLAINT_ANALYSIS] Analyzing text sentiment...", "RUN")
-    push_activity("Complaint submitted")
-    set_status("listener", "running", "Understanding complaint...")
+# ── Derived data ─────────────────────────────────────────────────────────────
 
-    ok, res = api_post("/complaint", {"complaint": text})
+def derive_tasks(complaints, pending):
+    tasks = []
+    for c in complaints:
+        base = {
+            "id":     c.get("complaint_id", "—"),
+            "title":  c.get("product_name", "Unknown"),
+            "detail": f"{c.get('issue_type','issue')} · {c.get('urgency_level','?')} urgency"
+        }
+        if c.get("loop_closed_at"):                                  col = "resolved"
+        elif (c.get("resolution","")).lower().find("escalate") >= 0: col = "escalated"
+        elif c.get("manufacturer_contacted"):                         col = "waiting"
+        else:                                                         col = "review"
+        tasks.append({**base, "col": col})
+    for m in pending:
+        tasks.append({
+            "col":    "resolved" if m.get("issue_resolved") else "waiting",
+            "id":     m.get("product_name", "—"),
+            "title":  f"Manufacturer: {m.get('product_name','Unknown')}",
+            "detail": f"Email: {'yes' if m.get('email_sent') else 'no'} · Follow-ups: {m.get('follow_up_count',0)}"
+        })
+    return tasks[:24]
 
-    if not ok:
-        set_status("listener", "error", "Failed to connect to API.")
-        append_chat("bot", f"API error: {res.get('error', 'Unknown error')}")
-        push_trace("[COMPLAINT_ANALYSIS] Complaint submission failed.", "ERR")
-        return
+def derive_calendar_events(complaints, pending):
+    events = []
+    for c in complaints:
+        if not c.get("created_at") or not c.get("estimated_resolution_days"): continue
+        try:
+            created = datetime.fromisoformat(str(c["created_at"]).replace("Z", "+00:00"))
+            due = created + timedelta(days=int(c["estimated_resolution_days"] or 0))
+            events.append({"date": due, "label": f"{c.get('product_name','Case')} due"})
+        except: pass
+    for m in pending:
+        base = m.get("updated_at") or m.get("contacted_at") or m.get("created_at")
+        if not base: continue
+        try:
+            d = datetime.fromisoformat(str(base).replace("Z", "+00:00")) + timedelta(days=1)
+            events.append({"date": d, "label": f"{m.get('product_name','Manufacturer')} follow-up"})
+        except: pass
+    return events[:30]
 
-    result_blob = safe_json(res, {})
-    customer_response = result_blob.get("customer_response", {}) or {}
+def derive_notes(complaints):
+    rows = [
+        f"Case {c.get('complaint_id','—')} · {c.get('product_name','?')} · "
+        f"{c.get('issue_type','?')} · resolution: {c.get('resolution','pending')}"
+        for c in complaints[:5]
+    ]
+    return "\n".join(rows) if rows else "No recent notes available."
 
-    set_status("listener", "done", "Complaint parsed successfully.")
-    set_status("analyst", "done", "Issue severity and eligibility evaluated.")
-    set_status("decision", "done", "Decision generated.")
-    set_status("database", "done", "Complaint stored successfully.")
+# ── HTML render helpers ──────────────────────────────────────────────────────
 
-    st.cache_data.clear()
-    latest_case, latest_product_stats = latest_case_data()
-    set_tool("notes", build_notes_text(latest_case))
-    prod = latest_case.get("product_name") or latest_case.get("product") or latest_case.get("order_id")
-    if prod:
-        st.session_state.last_product = prod
+def render_trace_html():
+    items = st.session_state.trace_items
+    if not items:
+        return '<div style="color:#93a6c8;font-size:.84rem;padding:4px 0;">No trace yet.</div>'
+    rows = ""
+    for item in items:
+        color = "#abf8ca" if item["status"] == "OK" else "#ff6b7d" if item["status"] == "ERR" else "#55e6ff"
+        rows += f'<div class="trace-line"><div class="trace-left">&gt; {item["text"]}</div><div class="trace-right" style="color:{color};">[{item["status"]}]</div></div>'
+    return rows
 
-    resolution_text = (
-        customer_response.get("customer_message")
-        or customer_response.get("resolution")
-        or customer_response.get("acknowledgement")
-        or result_blob.get("message")
-        or "Your complaint has been reviewed and recorded."
+def render_activity_html():
+    items = st.session_state.activity_items
+    if not items:
+        return '<div style="color:#93a6c8;font-size:.84rem;padding:4px 0;">No activity yet.</div>'
+    rows = ""
+    for item in items:
+        rows += f'<div class="feed-item"><div class="feed-dot"></div><div><div class="feed-time">{item["time"]}</div><div class="feed-text">{item["text"]}</div></div></div>'
+    return rows
+
+def render_status_html():
+    html = ""
+    for s in st.session_state.statuses:
+        html += (
+            f'<div class="status-item">'
+            f'<span class="dot dot-{s["state"]}"></span>'
+            f'<div><div class="status-title">{s["title"]}</div>'
+            f'<div class="status-text">{s["text"]}</div></div></div>'
+        )
+    return html
+
+def render_tools_html():
+    html = ""
+    for panel in st.session_state.tool_panels.values():
+        body = str(panel["body"])[:600]
+        html += (
+            f'<div class="tool-card">'
+            f'<div class="tool-head"><div class="tool-title">{panel["title"]}</div>'
+            f'<div class="tool-badge">{panel["badge"]}</div></div>'
+            f'<div class="tool-text">{body}</div></div>'
+        )
+    return html
+
+def render_bars_html(data: dict):
+    if not data:
+        return '<div style="color:#93a6c8;font-size:.84rem;">No data available.</div>'
+    colors = ["#55e6ff","#ca6dff","#ffca63","#5d85ff","#4fffb0","#ff6b7d"]
+    items  = list(data.items())
+    max_v  = max((float(v or 0) for _, v in items), default=1) or 1
+    html   = ""
+    for i, (label, value) in enumerate(items):
+        pct   = float(value or 0) / max_v * 100
+        color = colors[i % len(colors)]
+        html += (
+            f'<div class="bar-row">'
+            f'<div class="bar-label">{label}</div>'
+            f'<div class="bar-track"><div class="bar-fill" style="width:{pct:.1f}%;background:{color};box-shadow:0 0 10px {color};"></div></div>'
+            f'<div class="bar-value">{value}</div></div>'
+        )
+    return html
+
+def render_donut_html(data: dict):
+    colors = ["#ff6b7d","#5d85ff","#55e6ff","#ffca63","#ca6dff","#4fffb0"]
+    items  = [(k, int(v or 0)) for k, v in data.items()] if data else []
+    total  = sum(v for _, v in items) or 1
+    cx, cy, r, stroke = 110, 100, 68, 26
+    circumference = 2 * math.pi * r
+    offset  = 0
+    circles = ""
+    for i, (label, value) in enumerate(items):
+        pct   = value / total
+        dash  = pct * circumference
+        color = colors[i % len(colors)]
+        circles += (
+            f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}"'
+            f' stroke-width="{stroke}" stroke-linecap="round"'
+            f' stroke-dasharray="{dash:.2f} {circumference:.2f}"'
+            f' stroke-dashoffset="{-offset:.2f}"'
+            f' transform="rotate(-90 {cx} {cy})"'
+            f' style="filter:drop-shadow(0 0 8px {color});"></circle>'
+        )
+        offset += dash
+    circles += (
+        f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none"'
+        f' stroke="rgba(255,255,255,.06)" stroke-width="{stroke}"'
+        f' stroke-dasharray="{circumference:.2f} {circumference:.2f}"></circle>'
+    )
+    legend = "".join(
+        f'<div style="display:flex;align-items:center;gap:8px;font-size:.82rem;color:#d6e3f6;">'
+        f'<span style="width:10px;height:10px;border-radius:999px;background:{colors[i%len(colors)]};'
+        f'box-shadow:0 0 10px {colors[i%len(colors)]};flex:0 0 10px;display:inline-block;"></span>'
+        f'{label} {value}</div>'
+        for i, (label, value) in enumerate(items)
+    )
+    return (
+        f'<div style="display:flex;flex-direction:column;align-items:center;">'
+        f'<div style="position:relative;display:inline-block;">'
+        f'<svg width="220" height="200" viewBox="0 0 220 200">{circles}'
+        f'<text x="{cx}" y="{cy-6}" text-anchor="middle" fill="#f5f9ff" font-size="22" font-weight="800">{total}</text>'
+        f'<text x="{cx}" y="{cy+16}" text-anchor="middle" fill="#93a6c8" font-size="11">Issues tracked</text>'
+        f'</svg></div>'
+        f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin-top:8px;width:100%;">{legend}</div>'
+        f'</div>'
     )
 
-    append_chat("bot", f"{resolution_text}\n\nThanks for reporting this — your case has been logged and is being handled.")
+def render_calendar_html(complaints, pending):
+    today = datetime.now()
+    year, month = today.year, today.month
+    first_day     = datetime(year, month, 1)
+    start_wd      = (first_day.weekday() + 1) % 7
+    days_in_month = cal_mod.monthrange(year, month)[1]
+    prev_days     = cal_mod.monthrange(year, month - 1 if month > 1 else 12)[1]
 
-    if latest_case.get("manufacturer_contacted") or latest_product_stats.get("manufacturer_contacted", False):
-        set_status("manufacturer", "running", "Escalation sent to manufacturer.")
+    events    = derive_calendar_events(complaints, pending)
+    event_map = {}
+    for ev in events:
+        key = ev["date"].strftime("%Y-%m-%d")
+        event_map.setdefault(key, []).append(ev["label"])
+
+    day_names = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
+    html  = f'<div style="font-weight:800;font-size:.9rem;color:#f5f9ff;margin-bottom:10px;">{today.strftime("%B %Y")}</div>'
+    html += '<div class="cal-grid">'
+    html += "".join(f'<div class="cal-day-name">{n}</div>' for n in day_names)
+
+    for i in range(42):
+        if i < start_wd:
+            day_num   = prev_days - start_wd + i + 1
+            cell_date = datetime(year, month - 1 if month > 1 else 12, day_num)
+            dim       = True
+        elif i >= start_wd + days_in_month:
+            day_num   = i - (start_wd + days_in_month) + 1
+            cell_date = datetime(year, month + 1 if month < 12 else 1, day_num)
+            dim       = True
+        else:
+            day_num   = i - start_wd + 1
+            cell_date = datetime(year, month, day_num)
+            dim       = False
+
+        key      = cell_date.strftime("%Y-%m-%d")
+        is_today = (cell_date.date() == today.date())
+        day_evs  = event_map.get(key, [])
+        css_cls  = "cal-cell" + (" dim" if dim else "") + (" today" if is_today else "")
+        pills    = "".join(f'<div class="cal-pill">{ev}</div>' for ev in day_evs[:2])
+        html    += f'<div class="{css_cls}"><div class="cal-date">{day_num}</div>{pills}</div>'
+
+    html += "</div>"
+    return html
+
+def render_kanban_html(complaints, pending):
+    tasks = derive_tasks(complaints, pending)
+    cols  = [
+        ("review",    "In Review", "#55e6ff"),
+        ("waiting",   "Waiting",   "#ffca63"),
+        ("escalated", "Escalated", "#ff6b7d"),
+        ("resolved",  "Resolved",  "#4fffb0"),
+    ]
+    html = '<div class="kanban-grid">'
+    for key, label, color in cols:
+        items = [t for t in tasks if t["col"] == key]
+        cards = "".join(
+            f'<div class="task-card">'
+            f'<div class="task-title">{t["title"]}</div>'
+            f'<div class="task-sub">{t["id"]}</div>'
+            f'<div class="task-sub">{t["detail"]}</div></div>'
+            for t in items
+        ) or '<div style="color:#93a6c8;font-size:.8rem;">No items</div>'
+        html += (
+            f'<div class="kan-col">'
+            f'<div class="kan-head"><span style="color:{color};">{label}</span><span>{len(items)}</span></div>'
+            f'{cards}</div>'
+        )
+    html += '</div>'
+    return html
+
+def render_chat_html():
+    html = ""
+    for msg in st.session_state.chat_messages[-20:]:
+        if msg["type"] == "user":
+            html += f'<div class="chat-msg-user">{msg["text"]}</div>'
+        elif msg["type"] == "bot":
+            html += f'<div class="chat-msg-bot">{msg["text"]}</div>'
+        else:
+            html += f'<div class="chat-msg-sys">{msg["text"]}</div>'
+    return html
+
+# ── Optional panel loader ────────────────────────────────────────────────────
+
+def _load_optional_panels(complaints, pending):
+    ok, data = api_get("/notes/recent")
+    if ok:
+        set_tool("notes", json.dumps(data, indent=2)[:400])
+        set_status("notes", "done", "Notes loaded from backend.")
     else:
-        set_status("manufacturer", "pending", "No manufacturer escalation required yet.")
+        set_tool("notes", derive_notes(complaints), "Derived")
+        set_status("notes", "done", "Notes derived from complaints.")
 
-    set_tool("notes", build_notes_text(latest_case))
-    set_tool("manufacturer", build_manufacturer_text(latest_case, latest_product_stats))
-    set_tool("tasks", "Task board refreshed from latest complaint data.")
+    ok, data = api_get("/tasks/open-summary")
+    if ok:
+        set_tool("tasks", json.dumps(data, indent=2)[:400])
+        set_status("tasks", "done", "Tasks loaded from backend.")
+    else:
+        derived = "\n".join(f"{t['title']} — {t['detail']}" for t in derive_tasks(complaints, pending)[:6])
+        set_tool("tasks", derived or "No tasks yet.", "Derived")
+        set_status("tasks", "done", "Tasks derived from complaints.")
 
-    push_trace("[RESOLUTION_AGENT] Proposed resolution successfully.", "OK")
-    push_activity("Case updated by backend")
-    
-    if (
-      latest_case.get("is_resolved")
-      or latest_case.get("loop_closed_at")
-      or latest_case.get("manufacturer_resolved")
-      or latest_case.get("customer_notified_of_fix")
-      ):
-      append_chat("sys", "Case recorded successfully.")
-    
-def run_tracker_action():
-    prod = st.session_state.last_product
+    ok, data = api_get("/calendar/summary")
+    if ok:
+        set_tool("calendar", json.dumps(data, indent=2)[:400])
+        set_status("calendar", "done", "Calendar loaded from backend.")
+    else:
+        evs = derive_calendar_events(complaints, pending)[:6]
+        set_tool("calendar",
+                 "\n".join(f"{e['date'].strftime('%Y-%m-%d')} — {e['label']}" for e in evs) or "No upcoming events.",
+                 "Derived")
+        set_status("calendar", "done", "Calendar derived from complaints.")
 
-    if not prod:
-        latest_case, _ = latest_case_data()
-        prod = latest_case.get("product_name") or latest_case.get("product") or latest_case.get("order_id")
-        if prod:
-            st.session_state.last_product = prod
+    ok, data = api_get("/manufacturer/pending")
+    if ok:
+        raw = data.get("pending") or data.get("pending_contacts") or data.get("data") or []
+        if raw:
+            set_tool("manufacturer", json.dumps(raw[:2], indent=2)[:500])
+            set_status("manufacturer", "done", "Manufacturer data loaded.")
+        else:
+            set_tool("manufacturer", "No pending manufacturer escalations.")
+            set_status("manufacturer", "done", "No pending escalations.")
+    else:
+        set_tool("manufacturer", "Manufacturer endpoint unavailable.", "Unavailable")
+        set_status("manufacturer", "error", "Manufacturer endpoint unavailable.")
 
-    if not prod:
-        append_chat("sys", "No product available yet. Submit a complaint first.")
+# ── Submit complaint ─────────────────────────────────────────────────────────
+
+def do_submit_complaint(complaint_text, complaints, pending):
+    append_chat("user", complaint_text)
+    push_trace("Complaint received in customer portal", "OK")
+    push_trace("Listener agent extracting fields", "RUN")
+    push_activity("Complaint submitted from customer portal")
+    set_status("listener", "running", "Parsing complaint text...")
+    set_status("analyst",  "pending", "Waiting for eligibility check.")
+    set_status("decision", "pending", "Waiting for resolution selection.")
+    set_status("database", "pending", "Waiting for case log.")
+    set_status("customer", "pending", "Waiting for final response.")
+
+    ok, body = api_post("/complaint", {"complaint": complaint_text})
+
+    if not (ok and body.get("success")):
+        set_status("listener", "error", "Complaint submission failed.")
+        set_status("customer", "error", "No final response returned.")
+        err = body.get("detail") or body.get("error") or "Unknown error"
+        append_chat("sys", f"Submission failed: {err}")
+        push_trace("Complaint submission failed", "ERR")
+        push_activity("Complaint submission failed")
         return
 
-    push_trace(f"[TRACKER_AGENT] Running tracker for {prod}...", "RUN")
-    push_activity(f"Tracker started for {prod}")
-    set_status("tracker", "running", f"Running tracker for {prod}...")
+    customer     = body.get("customer_response", {})
+    steps_done   = body.get("steps_completed", [])
+    decision     = customer.get("decision", "unknown")
+    eta          = customer.get("estimated_resolution_days", "unknown")
+    complaint_id = body.get("complaint_id")
 
-    ok, res = api_post("/tracker/run", {"product_name": prod})
+    st.session_state.last_complaint_id = complaint_id
 
-    if ok and safe_json(res, {}).get("success", True):
-        set_status("tracker", "done", "Tracker executed successfully.")
-        set_tool("tracker", build_tracker_text(res, prod))
-        append_chat("sys", f"Tracker completed for {prod}.")
-        push_trace(f"[TRACKER_AGENT] Tracker completed for {prod}.", "OK")
+    set_status("listener", "done", "Complaint parsed successfully.")
+    push_trace("Listener extraction completed", "OK")
+    push_trace("Analyzer agent checking eligibility", "RUN")
+    push_activity("Listener agent completed extraction")
+
+    set_status("analyst", "done" if "analyst" in steps_done else "running", "Eligibility review completed.")
+    push_trace("Eligibility review completed", "OK")
+    push_trace(f"Decision selected: {decision}", "OK")
+    push_activity("Analyzer agent completed review")
+
+    set_status("decision", "done" if "decision" in steps_done else "running",
+               f"Decision: {decision}. ETA: {eta} day(s).")
+    push_trace("Database updating case", "RUN")
+    push_activity(f"Decision selected: {decision}")
+
+    if complaint_id:
+        set_status("database", "done", f"Complaint logged with ID {str(complaint_id)[:8]}…")
+        push_trace(f"Database updated for complaint {str(complaint_id)[:8]}", "OK")
+        push_activity(f"Complaint logged with ID {str(complaint_id)[:8]}")
     else:
-        set_status("tracker", "error", "Tracker failed.")
-        append_chat("sys", f"Tracker failed for {prod}.")
-        push_trace(f"[TRACKER_AGENT] Tracker failed for {prod}.", "ERR")
+        set_status("database", "error", "Complaint ID missing from backend response.")
+        push_trace("Complaint ID missing from backend response", "ERR")
+
+    set_status("customer", "done", "Customer response returned.")
+    if customer.get("acknowledgement"): append_chat("bot", customer["acknowledgement"])
+    if customer.get("resolution"):      append_chat("bot", customer["resolution"])
+    if steps_done: append_chat("sys", "Completed stages: " + ", ".join(steps_done))
+
+    push_trace("Customer response returned to chat", "OK")
+    push_activity("Customer-facing response returned")
+
+    try:
+        fresh = fetch_complaints.__wrapped__()
+    except Exception:
+        fresh = complaints
+    found = next((c for c in fresh if c.get("complaint_id") == complaint_id), None)
+    if found:
+        st.session_state.last_product = found.get("product_name")
+
+    _load_optional_panels(fresh, pending)
+
+    if st.session_state.last_product:
+        set_status("tracker", "pending", f"Tracker ready for {st.session_state.last_product}.")
+        set_tool("tracker", f"Tracker ready for: {st.session_state.last_product}\nUse 'Run Tracker' to execute follow-up.")
 
     st.cache_data.clear()
 
-def run_learning_action():
-    append_chat("sys", "Running learning agent...")
-    push_trace("[LEARNING_AGENT] Analyzing patterns...", "RUN")
-    push_activity("Learning agent started")
+# ── Load data ────────────────────────────────────────────────────────────────
 
-    ok, res = api_post("/learning/run", {})
+dashboard  = fetch_dashboard()
+complaints = fetch_complaints()
+products   = fetch_products()
+pending    = fetch_pending()
 
-    if ok and safe_json(res, {}).get("success", True):
-        append_chat("sys", "Learning agent finished successfully.")
-        push_trace("[LEARNING_AGENT] Learning completed.", "OK")
-    else:
-        parsed = safe_json(res, {})
-        append_chat("sys", f"Learning endpoint unavailable or failed: {parsed.get('error', 'Unknown error')}")
-        push_trace("[LEARNING_AGENT] Endpoint unavailable.", "ERR")
+summary     = dashboard.get("summary", {})
+resolution  = dashboard.get("resolution_breakdown", {})
+issue_types = dashboard.get("issue_breakdown", {})
+total_c     = summary.get("total_complaints", len(complaints))
+escalated   = resolution.get("escalate", 0)
 
-def on_sample_change():
-    selected_now = st.session_state.rx_chat_sample_select
-    st.session_state.sample_choice = selected_now
-    if selected_now == "Custom...":
-        st.session_state.rx_chat_textarea = ""
-        st.session_state.complaint_text = ""
-    else:
-        st.session_state.rx_chat_textarea = selected_now
-        st.session_state.complaint_text = selected_now
+def _is_overdue(c):
+    try:
+        eta = c.get("estimated_resolution_days")
+        cr  = c.get("created_at")
+        if not eta or not cr or c.get("loop_closed_at"):
+            return False
+        created = datetime.fromisoformat(str(cr).replace("Z", "+00:00"))
+        due     = created + timedelta(days=int(eta))
+        now     = datetime.now(due.tzinfo)
+        return now > due
+    except Exception:
+        return False
 
-# ── SESSION STATE ───────────────────────────────────────────────────────────
-
-if "chat_messages" not in st.session_state:
-    reset_session()
-
-if "chat_open" not in st.session_state:
-    st.session_state.chat_open = False
-
-if "rx_chat_textarea" not in st.session_state:
-    st.session_state.rx_chat_textarea = st.session_state.get("complaint_text", "")
-
-# ── LOAD DATA ────────────────────────────────────────────────────────────────
-
-data = fetch_all_data()
-api_ok = data["api_ok"]
-complaints = dedupe_cases(data["complaints"])
-pending = dedupe_cases(data["pending"])
-products = dedupe_cases(data["products"])
-summary = data["summary"]
-
-total_c, active_cases, resolved_cases, escalated, overdue, manufacturer_cases = infer_counts(
-    complaints, summary, pending
-)
-issue_types = compute_issue_breakdown(complaints)
-resolution = compute_resolution_breakdown(complaints)
-calendar_items = build_calendar_items(complaints, pending)
-kanban_cols = build_kanban(complaints)
-
-st.session_state.tool_panels["calendar"] = f"{len(calendar_items)} scheduled day(s) with follow-ups or ETA items."
+overdue = sum(1 for c in complaints if _is_overdue(c))
+api_ok  = check_api()
 
 # ── SIDEBAR ──────────────────────────────────────────────────────────────────
 
@@ -1636,66 +1031,28 @@ with st.sidebar:
 
     color_api = "#4fffb0" if api_ok else "#ff6b7d"
     label_api = "API Connected" if api_ok else "API Disconnected"
-    st.markdown(
-        f'<div style="font-weight:700;font-size:.85rem;color:{color_api};margin-bottom:4px;">● {label_api}</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown(f'<div style="font-weight:700;font-size:.85rem;color:{color_api};margin-bottom:4px;">● {label_api}</div>', unsafe_allow_html=True)
     st.caption(f"→ {API_BASE}")
 
     st.markdown('<div class="side-label" style="margin-top:14px;">Navigation</div>', unsafe_allow_html=True)
-
-    page = st.radio(
-        "nav",
-        ["Overview", "Operations", "Complaints", "Products"],
-        label_visibility="collapsed",
-        key="sidebar_nav"
-    )
+    page = st.radio("nav", ["  Overview","  Operations","  Complaints","  Products"], label_visibility="collapsed")
 
     st.markdown('<hr style="margin:14px 0;">', unsafe_allow_html=True)
 
-    if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_btn"):
-        st.cache_data.clear()
-        push_activity("Dashboard refreshed")
-        st.rerun()
+# ── MAIN HEADER ──────────────────────────────────────────────────────────────
 
-    if st.button("🧹 Reset Session", use_container_width=True, key="reset_btn_sidebar"):
-        reset_session()
-        st.cache_data.clear()
-        st.rerun()
-
-    st.markdown("""
-    <div style="margin-top:8px;padding:12px;border-radius:16px;
-                border:1px solid rgba(255,255,255,.06);
-                background:linear-gradient(180deg, rgba(28,36,51,.88), rgba(20,27,39,.92));
-                font-size:.78rem;color:#93a6c8;line-height:1.6;">
-      Multi-agent complaint understanding, decisioning, escalation, and follow-up activity in one command center.
-    </div>
-    """, unsafe_allow_html=True)
-
-# ── HEADER ───────────────────────────────────────────────────────────────────
-
-st.markdown(f"""
-<div style="margin-bottom:10px;">
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-    <div style="width:10px;height:10px;border-radius:999px;background:#9dff8a;box-shadow:0 0 12px #9dff8a;"></div>
-    <div style="font-size:.78rem;font-weight:800;letter-spacing:.16em;color:#8fa3c7;text-transform:uppercase;">
-      ResolveX Command Center
-    </div>
-  </div>
-
-  <h1 style="margin:0;font-size:2.1rem;font-weight:800;letter-spacing:-.05em;color:#f5f9ff;line-height:1.1;">
-    Autonomous Customer Resolution Dashboard
+st.markdown("""
+<div style="margin-bottom:6px;">
+  <h1 style="margin:0;font-size:1.85rem;font-weight:800;letter-spacing:-.05em;color:#f5f9ff;">
+    ResolveX — Autonomous Customer Resolution System
   </h1>
-
-  <p style="margin:10px 0 0;color:#c6d6ee;line-height:1.65;font-size:.95rem;max-width:980px;">
-    Monitor complaints, resolution decisions, escalations, product issues, and live follow-up activity in one place.
+  <p style="margin:8px 0 0;color:#c6d6ee;line-height:1.6;font-size:.94rem;">
+    From complaint to closure — understanding issues, evaluating eligibility, coordinating actions,
+    escalating manufacturers, and tracking cases until resolution.
   </p>
-
-  <div style="margin-top:12px;color:#8da2c6;font-size:.82rem;font-weight:700;">
-    Updated live • {now_label()}
-  </div>
 </div>
 """, unsafe_allow_html=True)
+st.caption(f"Last updated: {datetime.now().strftime('%B %d, %Y  %H:%M:%S')}")
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # ── FLOATING CHAT BUTTON ─────────────────────────────────────────────────────
@@ -1711,18 +1068,20 @@ with fab_wrap:
 if st.session_state.chat_open:
     panel = st.container(key="rx_chat_panel")
     with panel:
+        # Single wrapping shell — fully opaque background
+        st.markdown('<div class="rx-chat-shell">', unsafe_allow_html=True)
+
+        # Header row
         header_cols = st.columns([10, 1])
         with header_cols[0]:
             st.markdown("""
-            <div class="rx-chat-shell">
-              <div class="rx-chat-header">
-                <div class="rx-chat-header-left">
-                  <div class="rx-chat-header-dot"></div>
-                  <div class="rx-chat-header-title">ResolveX Assistant</div>
-                </div>
+            <div class="rx-chat-header">
+              <div class="rx-chat-header-left">
+                <div class="rx-chat-header-dot"></div>
+                <div class="rx-chat-header-title">ResolveX Assistant</div>
               </div>
+            </div>
             """, unsafe_allow_html=True)
-
         with header_cols[1]:
             close_wrap = st.container(key="rx_chat_close")
             with close_wrap:
@@ -1730,10 +1089,13 @@ if st.session_state.chat_open:
                     st.session_state.chat_open = False
                     st.rerun()
 
-        st.markdown('<div class="rx-chat-messages">', unsafe_allow_html=True)
-        st.markdown(render_chat_html(), unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Messages
+        st.markdown(
+            f'<div class="rx-chat-messages">{render_chat_html()}</div>',
+            unsafe_allow_html=True
+        )
 
+        # Form area
         st.markdown('<div class="rx-chat-form">', unsafe_allow_html=True)
         st.markdown('<div class="rx-chat-sample-note">Quick samples</div>', unsafe_allow_html=True)
 
@@ -1746,483 +1108,291 @@ if st.session_state.chat_open:
         ]
 
         sample_index = samples.index(st.session_state.sample_choice) if st.session_state.sample_choice in samples else 0
-
-        st.selectbox(
-            "Sample complaint",
+        selected_sample = st.selectbox(
+            "Choose a sample",
             samples,
             index=sample_index,
-            label_visibility="collapsed",
-            key="rx_chat_sample_select",
-            on_change=on_sample_change
+            key="chat_sample_select",
+            label_visibility="collapsed"
         )
+        st.session_state.sample_choice = selected_sample
+        default_value = "" if selected_sample == "Custom..." else selected_sample
 
         complaint_input = st.text_area(
             "Complaint",
-            height=110,
+            value=default_value,
+            height=90,
             placeholder="Describe your issue here...",
             label_visibility="collapsed",
-            key="rx_chat_textarea"
+            key="chat_input_box"
         )
 
-        st.session_state.complaint_text = complaint_input
-
-        row1_col1, row1_col2 = st.columns(2)
-        with row1_col1:
-            if st.button("Send", use_container_width=True, key="rx_chat_send_btn"):
-                text_to_send = st.session_state.rx_chat_textarea.strip()
-                if text_to_send and len(text_to_send) >= 10:
-                    st.session_state.complaint_text = text_to_send
-                    do_submit_complaint(text_to_send)
-                    st.session_state.chat_open = True
-                    st.cache_data.clear()
+        col_send, col_reset = st.columns(2)
+        with col_send:
+            if st.button("Send", use_container_width=True, key="send_btn_floating"):
+                if complaint_input and len(complaint_input.strip()) >= 10:
+                    do_submit_complaint(complaint_input.strip(), complaints, pending)
                     st.rerun()
                 else:
                     st.warning("Enter at least 10 characters.")
-
-        with row1_col2:
-            if st.button("Reset", use_container_width=True, key="rx_chat_reset_btn"):
+        with col_reset:
+            if st.button("Reset", use_container_width=True, key="reset_btn_floating"):
                 reset_session()
-                st.session_state.chat_open = True
                 st.rerun()
 
-        row2_col1, row2_col2 = st.columns(2)
-        with row2_col1:
-            if st.button("Tracker", use_container_width=True, key="rx_chat_tracker_btn"):
-                run_tracker_action()
-                st.session_state.chat_open = True
+        col_trk, col_lrn = st.columns(2)
+        with col_trk:
+            if st.button("Tracker", use_container_width=True, key="tracker_btn_floating"):
+                prod = st.session_state.last_product
+                if prod:
+                    push_trace(f"Running tracker for {prod}", "RUN")
+                    push_activity(f"Tracker started for {prod}")
+                    set_status("tracker", "running", f"Running tracker for {prod}...")
+                    ok, res = api_post("/tracker/run", {"product_name": prod})
+                    if ok and res.get("success"):
+                        set_status("tracker", "done", "Tracker executed successfully.")
+                        set_tool("tracker", json.dumps(res.get("result", {}), indent=2)[:500])
+                        append_chat("sys", f"Tracker ran for {prod}.")
+                        push_trace(f"Tracker completed for {prod}", "OK")
+                    else:
+                        set_status("tracker", "error", "Tracker failed.")
+                        push_trace(f"Tracker failed for {prod}", "ERR")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    append_chat("sys", "Submit a complaint first so the tracker knows which product to follow.")
+                    st.rerun()
+        with col_lrn:
+            if st.button("Learning", use_container_width=True, key="learning_btn_floating"):
+                append_chat("sys", "Running learning agent...")
+                push_trace("Learning agent triggered", "RUN")
+                push_activity("Learning agent started")
+                ok, res = api_post("/learning/run", {})
+                if ok and res.get("success"):
+                    append_chat("sys", "Learning agent finished successfully.")
+                    push_trace("Learning agent completed", "OK")
+                else:
+                    append_chat("sys", "Learning endpoint unavailable or failed.")
+                    push_trace("Learning endpoint unavailable", "ERR")
                 st.rerun()
 
-        with row2_col2:
-            if st.button("Learning", use_container_width=True, key="rx_chat_learning_btn"):
-                run_learning_action()
-                st.session_state.chat_open = True
-                st.rerun()
+        if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_btn_floating"):
+            st.cache_data.clear()
+            push_activity("Dashboard refreshed")
+            st.rerun()
 
-        st.markdown('</div></div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="margin-top:8px;padding:12px;border-radius:14px;
+                    border:1px solid rgba(108,140,220,.14);
+                    background:#0d1e35;
+                    font-size:.76rem;color:#93a6c8;line-height:1.5;">
+          Multi-agent complaint understanding, decisioning, escalation, follow-up tracking, calendar and task board.
+        </div>
+        """, unsafe_allow_html=True)
 
-# ── PAGE: OVERVIEW ───────────────────────────────────────────────────────────
+        st.markdown('</div>', unsafe_allow_html=True)  # close rx-chat-form
+        st.markdown('</div>', unsafe_allow_html=True)  # close rx-chat-shell
 
-if page == "Overview":
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Total Complaints", total_c)
-    c2.metric("Active Cases", active_cases)
-    c3.metric("Resolved", resolved_cases)
-    c4.metric("Escalated", escalated)
-    c5.metric("Manufacturer Cases", manufacturer_cases)
-    c6.metric("SLA Overdue", overdue)
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: OVERVIEW
+# ════════════════════════════════════════════════════════════════════════════
+
+if page == "  Overview":
+
+    c1,c2,c3,c4,c5,c6 = st.columns(6)
+    c1.metric("Total Complaints",   total_c)
+    c2.metric("Active Cases",       sum(1 for c in complaints if not c.get("loop_closed_at")))
+    c3.metric("Resolved",           sum(1 for c in complaints if c.get("loop_closed_at") or c.get("resolution")))
+    c4.metric("Escalated",          escalated)
+    c5.metric("Manufacturer Cases", len(pending) or summary.get("manufacturer_contacted", 0))
+    c6.metric("SLA Overdue",        overdue)
 
     st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
 
     col_l, col_r = st.columns(2)
     with col_l:
-        st.markdown(
-            '<div class="rx-card glow-green"><div class="rx-card-title">AI Thought Trace</div><div class="rx-card-desc">Readable multi-agent workflow progression.</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<div class="rx-card"><div class="rx-card-title">AI Thought Trace</div><div class="rx-card-desc">Readable multi-agent workflow progression.</div>', unsafe_allow_html=True)
         st.markdown(render_trace_html(), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-
     with col_r:
-        st.markdown(
-            '<div class="rx-card glow-blue"><div class="rx-card-title">Live Activity Feed</div><div class="rx-card-desc">Recent operational events and updates.</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<div class="rx-card"><div class="rx-card-title">Live Activity Feed</div><div class="rx-card-desc">Recent operational events and updates.</div>', unsafe_allow_html=True)
         st.markdown(render_activity_html(), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    col_l2, col_r2 = st.columns([1.2, 1])
+    col_l2, col_r2 = st.columns(2)
     with col_l2:
-        st.markdown(
-            '<div class="rx-card"><div class="rx-card-title">Resolution Breakdown</div><div class="rx-card-desc">Outcome distribution across complaints.</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<div class="rx-card"><div class="rx-card-title">Resolution Breakdown</div><div class="rx-card-desc">Outcome distribution across complaints.</div>', unsafe_allow_html=True)
         st.markdown(render_bars_html(resolution), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-
     with col_r2:
-        st.markdown(
-            '<div class="rx-card"><div class="rx-card-title">Issue Type Distribution</div><div class="rx-card-desc">Current complaint category mix.</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<div class="rx-card"><div class="rx-card-title">Issue Type Distribution</div><div class="rx-card-desc">Current complaint category mix.</div>', unsafe_allow_html=True)
         st.markdown(render_donut_html(issue_types), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-# ── PAGE: OPERATIONS ─────────────────────────────────────────────────────────
-elif page == "Operations":
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: OPERATIONS
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "  Operations":
+
     col_l, col_r = st.columns([1, 1.1])
-
     with col_l:
-        st.markdown(f'''
-            <div class="rx-card">
-              <div class="rx-card-title">System Status</div>
-              <div class="rx-card-desc">Real subsystem states during execution.</div>
-              {render_status_html()}
-            </div>
-        ''', unsafe_allow_html=True)
-
+        st.markdown('<div class="rx-card"><div class="rx-card-title">System Status</div><div class="rx-card-desc">Real subsystem states during execution.</div>', unsafe_allow_html=True)
+        st.markdown(render_status_html(), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     with col_r:
-        st.markdown(f'''
-            <div class="rx-card">
-              <div class="rx-card-title">Operational Panels</div>
-              <div class="rx-card-desc">Notes, tasks, calendar, manufacturer, and tracker output.</div>
-              {render_tools_html()}
-            </div>
-        ''', unsafe_allow_html=True)
+        st.markdown('<div class="rx-card"><div class="rx-card-title">Operational Panels</div><div class="rx-card-desc">Notes, tasks, calendar, manufacturer, and tracker output.</div>', unsafe_allow_html=True)
+        st.markdown(render_tools_html(), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown(f'''
-        <div class="rx-card">
-          <div class="rx-card-title">Monthly Calendar</div>
-          <div class="rx-card-desc">ETA and follow-up visibility for this month.</div>
-          {render_calendar_html(calendar_items)}
-        </div>
-    ''', unsafe_allow_html=True)
+    col_l2, col_r2 = st.columns(2)
+    with col_l2:
+        st.markdown('<div class="rx-card"><div class="rx-card-title">Calendar</div><div class="rx-card-desc">Estimated due dates and follow-ups.</div>', unsafe_allow_html=True)
+        st.markdown(render_calendar_html(complaints, pending), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+    with col_r2:
+        st.markdown('<div class="rx-card"><div class="rx-card-title">Task Board</div><div class="rx-card-desc">Derived from current case state.</div>', unsafe_allow_html=True)
+        st.markdown(render_kanban_html(complaints, pending), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown(f'''
-        <div class="rx-card">
-          <div class="rx-card-title">Task Board</div>
-          <div class="rx-card-desc">Kanban-style complaint flow across stages.</div>
-          {render_kanban_html(kanban_cols)}
-        </div>
-    ''', unsafe_allow_html=True)
+    st.markdown("<div style='margin-top:4px;'></div>", unsafe_allow_html=True)
+    with st.expander("⚙️ Manual Agent Triggers"):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Run Tracker Agent**")
+            tracker_products = [p.get("product_name") for p in products
+                                if p.get("manufacturer_contacted") and not p.get("manufacturer_resolved")]
+            if tracker_products:
+                sel = st.selectbox("Product to track:", tracker_products, key="ops_tracker_select")
+                if st.button("▶ Run Tracker", key="ops_run_tracker"):
+                    with st.spinner(f"Tracking {sel}..."):
+                        ok, res = api_post("/tracker/run", {"product_name": sel})
+                    if ok and res.get("success"):
+                        st.success(f"Tracker completed for {sel}")
+                        push_trace(f"Tracker completed for {sel}", "OK")
+                        push_activity(f"Tracker completed for {sel}")
+                        set_status("tracker", "done", f"Tracker completed for {sel}.")
+                        set_tool("tracker", json.dumps(res.get("result",{}), indent=2)[:500])
+                        st.cache_data.clear(); st.rerun()
+                    else:
+                        st.error(f"Failed: {res.get('error')}")
+            else:
+                st.info("No products awaiting tracker.")
+        with c2:
+            st.markdown("**Run Learning Agent**")
+            if st.button("▶ Run Learning Agent", key="ops_run_learning"):
+                with st.spinner("Analyzing patterns..."):
+                    ok, res = api_post("/learning/run", {})
+                if ok and res.get("success"):
+                    st.success("Learning agent completed")
+                    push_trace("Learning agent completed", "OK")
+                    push_activity("Learning agent completed")
+                    st.rerun()
+                else:
+                    st.error(f"Failed: {res.get('error')}")
 
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: COMPLAINTS
+# ════════════════════════════════════════════════════════════════════════════
 
-# ── PAGE: COMPLAINTS ─────────────────────────────────────────────────────────
-elif page == "Complaints":
-    st.markdown(
-        '<div class="rx-card"><div class="rx-card-title">Complaint Cases</div><div class="rx-card-desc">Latest complaint data returned by the API.</div>',
-        unsafe_allow_html=True
-    )
+elif page == "  Complaints":
 
-    if complaints:
-        rows = []
-        seen = set()
+    st.markdown('<div class="rx-card"><div class="rx-card-title">Complaints</div><div class="rx-card-desc">Filter complaints by product, issue, urgency, and resolution.</div></div>', unsafe_allow_html=True)
 
-        for c in complaints:
-            key = c.get("complaint_id") or (
-                c.get("order_id"),
-                c.get("product_name") or c.get("product"),
-                c.get("issue_type") or c.get("category"),
-                c.get("complaint_summary") or c.get("summary") or c.get("complaint"),
-            )
-            if key in seen:
-                continue
-            seen.add(key)
-
-            rows.append({
-                "Order ID": c.get("order_id") or "Not provided",
-                "Product": c.get("product_name") or c.get("product") or "Unknown",
-                "Issue Type": c.get("issue_type") or c.get("category") or "other",
-                "Stage": complaint_stage_value(c),
-                "Resolution": complaint_resolution_display(c),
-                "Resolved": complaint_resolved_value(c),
-                "Manufacturer Contacted": "Yes" if c.get("manufacturer_contacted") else "No",
-                "ETA": c.get("estimated_resolution_days") or c.get("eta") or "—",
-                "Summary": c.get("complaint_summary") or c.get("summary") or c.get("complaint") or "—",
-            })
-
-        df = pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    if not complaints:
+        st.info("No complaints logged yet.")
     else:
-        st.info("No complaints returned yet.")
+        df = pd.DataFrame(complaints)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            prods = ["All"] + sorted(df["product_name"].dropna().unique().tolist()) if "product_name" in df.columns else ["All"]
+            pf = st.selectbox("Product", prods, key="cp_prod")
+        with c2:
+            ress = ["All"] + sorted(df["resolution"].dropna().unique().tolist()) if "resolution" in df.columns else ["All"]
+            rf = st.selectbox("Resolution", ress, key="cp_res")
+        with c3:
+            uf = st.selectbox("Urgency", ["All","high","medium","low"], key="cp_urg")
+        with c4:
+            issues = ["All"] + sorted(df["issue_type"].dropna().unique().tolist()) if "issue_type" in df.columns else ["All"]
+            isf = st.selectbox("Issue Type", issues, key="cp_issue")
 
+        if pf  != "All" and "product_name"  in df.columns: df = df[df["product_name"]  == pf]
+        if rf  != "All" and "resolution"    in df.columns: df = df[df["resolution"]    == rf]
+        if uf  != "All" and "urgency_level" in df.columns: df = df[df["urgency_level"] == uf]
+        if isf != "All" and "issue_type"    in df.columns: df = df[df["issue_type"]    == isf]
 
+        if "created_at" in df.columns:
+            df = df.sort_values("created_at", ascending=False)
 
-# ── PAGE: PRODUCTS ───────────────────────────────────────────────────────────
-elif page == "Products":
-    st.markdown(
-        '<div class="rx-card"><div class="rx-card-title">Products</div><div class="rx-card-desc">Product overview with complaint count, complaint details, and demo resolution actions.</div></div>',
-        unsafe_allow_html=True
-    )
+        display_cols = ["complaint_id","product_name","issue_type","urgency_level",
+                        "customer_emotion","resolution","priority","estimated_resolution_days","created_at"]
+        existing = [c for c in display_cols if c in df.columns]
 
-    # ---- local helpers for demo-friendly product actions ----
-    def verify_product_eligibility(product_name: str) -> dict:
-        ok, res = api_post("/eligibility/verify", {"product_name": product_name})
-        if ok:
-            return res
-        return {
-            "success": True,
-            "demo": True,
-            "eligible": True,
-            "reason": f"{product_name} is within policy and eligible for support action."
-        }
+        st.dataframe(
+            df[existing].rename(columns={
+                "complaint_id":"ID","product_name":"Product","issue_type":"Issue",
+                "urgency_level":"Urgency","customer_emotion":"Emotion","resolution":"Resolution",
+                "priority":"Priority","estimated_resolution_days":"ETA (days)","created_at":"Created"
+            }),
+            use_container_width=True, hide_index=True,
+        )
+        st.caption(f"Showing {len(df)} of {len(complaints)} complaints")
 
-    def issue_product_refund(product_name: str) -> dict:
-        ok, res = api_post("/refund/issue", {"product_name": product_name})
-        if ok:
-            return res
-        return {
-            "success": True,
-            "demo": True,
-            "action": "refund",
-            "message": f"Refund initiated for {product_name}."
-        }
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: PRODUCTS
+# ════════════════════════════════════════════════════════════════════════════
 
-    def issue_product_replacement(product_name: str) -> dict:
-        ok, res = api_post("/replacement/issue", {"product_name": product_name})
-        if ok:
-            return res
-        return {
-            "success": True,
-            "demo": True,
-            "action": "replacement",
-            "message": f"Replacement initiated for {product_name}."
-        }
+elif page == "  Products":
 
-    def eligibility_value(case: dict) -> str:
-        if case.get("eligible") is True:
-            return "Eligible"
-        if case.get("eligible") is False:
-            return "Not Eligible"
-
-        resolution = str(case.get("resolution") or case.get("status") or "").strip().lower()
-        if resolution in {"replacement", "full_refund", "partial_refund"}:
-            return "Eligible"
-        if resolution == "escalate":
-            return "Under Review"
-        return "Under Review"
-
-    def action_value(case: dict) -> str:
-        action = case.get("recommended_action") or case.get("action_taken") or case.get("decision")
-        if action:
-            return str(action).replace("_", " ").title()
-
-        resolution = str(case.get("resolution") or case.get("status") or "").strip().lower()
-        if resolution == "replacement":
-            return "Replacement"
-        if resolution == "full_refund":
-            return "Full Refund"
-        if resolution == "partial_refund":
-            return "Partial Refund"
-        if resolution == "escalate":
-            return "Escalate to Manufacturer"
-        return "Pending Review"
-
-    def pretty_resolution(case: dict) -> str:
-        val = case.get("resolution") or case.get("status") or "—"
-        return str(val).replace("_", " ").title()
-
-    if "product_action_feedback" not in st.session_state:
-        st.session_state.product_action_feedback = {}
+    st.markdown('<div class="rx-card"><div class="rx-card-title">Products</div><div class="rx-card-desc">Product-level complaint and escalation monitoring.</div></div>', unsafe_allow_html=True)
 
     if not products:
-        st.info("No products returned from the backend yet.")
+        st.info("No product data yet.")
     else:
-        complaint_counts = {}
-        product_case_map = {}
+        for prod in products:
+            name    = prod.get("product_name", "Unknown")
+            total_p = prod.get("total_complaints", 0)
+            cont    = prod.get("manufacturer_contacted", False)
+            res     = prod.get("manufacturer_resolved", False)
+            pattern = prod.get("pattern_detected", False)
 
-        for c in complaints:
-            pname = c.get("product_name") or c.get("product") or "Unnamed Product"
-            complaint_counts[pname] = complaint_counts.get(pname, 0) + 1
-            product_case_map.setdefault(pname, []).append(c)
-
-        seen_products = set()
-
-        for product in products:
-            name = product.get("name") or product.get("product_name") or "Unnamed Product"
-            if name in seen_products:
-                continue
-            seen_products.add(name)
-
-            sku = product.get("sku") or product.get("id") or product.get("product_id") or "-"
-            issues = complaint_counts.get(name, product.get("issues") or product.get("complaint_count") or 0)
-            warranty = product.get("warranty") or product.get("warranty_status") or "-"
-            replacement = product.get("replacement_window") or product.get("replacement_policy") or "-"
-            category = product.get("category", "Product")
-
-            related_cases = product_case_map.get(name, [])
-
-            unique_cases = []
-            seen_cases = set()
-            for c in related_cases:
-                key = c.get("complaint_id") or (
-                    c.get("order_id"),
-                    c.get("product_name") or c.get("product"),
-                    c.get("issue_type") or c.get("category"),
-                    c.get("complaint_summary") or c.get("summary") or c.get("complaint"),
-                )
-                if key in seen_cases:
-                    continue
-                seen_cases.add(key)
-                unique_cases.append(c)
-
-            resolved_cases = sum(1 for c in unique_cases if complaint_resolved_value(c) == "Yes")
-            open_cases = max(len(unique_cases) - resolved_cases, 0)
-
-            details_key = f"show_product_details_{name}"
-            if details_key not in st.session_state:
-                st.session_state[details_key] = False
+            icon   = "✅" if res else ("📨" if cont else ("⚠️" if pattern else "👁️"))
+            status = "Resolved" if res else ("Manufacturer Contacted" if cont else ("Pattern Detected" if pattern else "Monitoring"))
+            sc     = "#4fffb0" if res else ("#ffca63" if cont else ("#ff6b7d" if pattern else "#55e6ff"))
 
             st.markdown(f"""
             <div class="product-card">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
                 <div>
-                  <div style="font-size:1rem;font-weight:800;color:#f5f9ff;margin-bottom:6px;">{esc(name)}</div>
-                  <div style="font-size:.78rem;color:#93a6c8;">SKU / ID: {esc(sku)}</div>
+                  <div style="font-size:.96rem;font-weight:800;color:#f5f9ff;margin-bottom:4px;">{icon} {name}</div>
+                  <div style="color:#93a6c8;font-size:.8rem;">{status}</div>
                 </div>
-                <div class="rx-pill">{esc(category)}</div>
+                <span class="rx-pill" style="border-color:{sc}40;color:{sc};">{status}</span>
               </div>
-
-              <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:14px;">
-                <div class="mini-stat"><span>Complaints</span><strong>{esc(issues)}</strong></div>
-                <div class="mini-stat"><span>Resolved</span><strong>{esc(resolved_cases)}</strong></div>
-                <div class="mini-stat"><span>Open</span><strong>{esc(open_cases)}</strong></div>
-                <div class="mini-stat"><span>Warranty</span><strong>{esc(warranty)}</strong></div>
-                <div class="mini-stat"><span>Replacement</span><strong>{esc(replacement)}</strong></div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+                <div class="mini-stat"><span>Total Complaints</span><strong>{total_p}</strong></div>
+                <div class="mini-stat"><span>Pattern Detected</span><strong>{"Yes" if pattern else "No"}</strong></div>
+                <div class="mini-stat"><span>Mfr Contacted</span><strong>{"Yes" if cont else "No"}</strong></div>
+                <div class="mini-stat"><span>Mfr Resolved</span><strong>{"Yes" if res else "No"}</strong></div>
+              </div>
+              <div>
+                <span class="rx-pill">Product: {name}</span>
+                <span class="rx-pill">Complaints: {total_p}</span>
+                <span class="rx-pill">Pattern: {"Detected" if pattern else "No"}</span>
               </div>
             </div>
             """, unsafe_allow_html=True)
 
-            # ALWAYS show these buttons for every product
-            b1, b2 = st.columns([1, 1])
-            with b1:
-                if st.button(f"Resolve {name}", key=f"resolve_always_{name}"):
-                    with st.spinner(f"Updating {name}..."):
-                        result = mark_product_rectified(name)
-
-                    if result.get("success"):
-                        st.success(f"{name} was marked as resolved successfully.")
-                        st.cache_data.clear()
-                        st.rerun()
+            if cont and not res:
+                if st.button(f"✅ Mark '{name}' Resolved", key=f"resolve_{name}"):
+                    with st.spinner("Closing loop and notifying customers..."):
+                        ok, result = api_post("/manufacturer/resolve", {"product_name": name})
+                    if ok and result.get("success"):
+                        notified = result.get("result", {}).get("customers_notified", 0)
+                        st.success(f"✅ Resolved! {notified} customer(s) notified.")
+                        push_trace(f"Manufacturer issue resolved for {name}", "OK")
+                        push_activity(f"Manufacturer issue resolved for {name}")
+                        st.cache_data.clear(); st.rerun()
                     else:
-                        st.error(f"Error: {result.get('error', 'Unknown error')}")
-
-            with b2:
-                toggle_label = (
-                    f"Hide details for {name}"
-                    if st.session_state[details_key]
-                    else f"View details for {name}"
-                )
-                if st.button(toggle_label, key=f"toggle_product_{name}"):
-                    st.session_state[details_key] = not st.session_state[details_key]
-                    st.rerun()
-
-            if st.session_state[details_key]:
-                st.markdown(f"""
-                <div style="
-                    border:1px solid rgba(255,255,255,.06);
-                    border-radius:16px;
-                    padding:14px;
-                    margin-top:10px;
-                    margin-bottom:16px;
-                    background:linear-gradient(180deg, rgba(23,31,46,.96), rgba(16,22,34,.96));
-                ">
-                  <div style="font-size:.92rem;font-weight:800;color:#f5f9ff;margin-bottom:8px;">
-                    {esc(name)} complaint details
-                  </div>
-                  <div style="font-size:.8rem;color:#93a6c8;line-height:1.6;margin-bottom:12px;">
-                    Review the complaint cases for this product below. You can demo eligibility verification, refund, replacement, and final closure from here.
-                  </div>
-                """, unsafe_allow_html=True)
-
-                if unique_cases:
-                    for c in unique_cases:
-                        order_id = c.get("order_id") or "Not provided"
-                        issue_type = c.get("issue_type") or c.get("category") or "other"
-                        summary_txt = c.get("complaint_summary") or c.get("summary") or c.get("complaint") or "—"
-                        stage = complaint_stage_value(c)
-                        resolved = complaint_resolved_value(c)
-                        manufacturer_contacted = "Yes" if c.get("manufacturer_contacted") else "No"
-                        eta = c.get("estimated_resolution_days") or c.get("eta") or "—"
-                        eligibility = eligibility_value(c)
-                        action = action_value(c)
-                        resolution_label = pretty_resolution(c)
-
-                        st.markdown(f"""
-                        <div style="
-                            border:1px solid rgba(255,255,255,.06);
-                            border-radius:14px;
-                            padding:12px;
-                            margin-bottom:10px;
-                            background:rgba(17,26,45,.72);
-                        ">
-                          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;">
-                            <div style="font-size:.88rem;font-weight:800;color:#f5f9ff;">
-                              Order ID: {esc(order_id)}
-                            </div>
-                            <div class="rx-pill">{esc(issue_type)}</div>
-                          </div>
-
-                          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;">
-                            <div class="mini-stat"><span>Stage</span><strong>{esc(stage)}</strong></div>
-                            <div class="mini-stat"><span>Eligibility</span><strong>{esc(eligibility)}</strong></div>
-                            <div class="mini-stat"><span>Action</span><strong>{esc(action)}</strong></div>
-                            <div class="mini-stat"><span>Resolved</span><strong>{esc(resolved)}</strong></div>
-                          </div>
-
-                          <div style="font-size:.78rem;color:#c6d6ee;line-height:1.65;">
-                            <strong>Resolution:</strong> {esc(resolution_label)}<br>
-                            <strong>Manufacturer Contacted:</strong> {esc(manufacturer_contacted)}<br>
-                            <strong>ETA:</strong> {esc(eta)}<br>
-                            <strong>Summary:</strong> {esc(summary_txt)}
-                          </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.info("No complaint cases linked to this product yet.")
-
-                st.markdown("""
-                <div style="margin-top:12px;margin-bottom:10px;font-size:.82rem;color:#c6d6ee;font-weight:700;">
-                  Demo Actions
-                </div>
-                """, unsafe_allow_html=True)
-
-                action_key_base = f"product_actions_{name}"
-
-                a1, a2, a3 = st.columns(3)
-
-                with a1:
-                    if st.button("Verify Eligibility", key=f"verify_eligibility_{name}"):
-                        result = verify_product_eligibility(name)
-                        st.session_state.product_action_feedback[action_key_base] = {
-                            "type": "eligibility",
-                            "result": result
-                        }
-                        st.rerun()
-
-                with a2:
-                    if st.button("Issue Refund", key=f"issue_refund_{name}"):
-                        result = issue_product_refund(name)
-                        st.session_state.product_action_feedback[action_key_base] = {
-                            "type": "refund",
-                            "result": result
-                        }
-                        st.rerun()
-
-                with a3:
-                    if st.button("Issue Replacement", key=f"issue_replacement_{name}"):
-                        result = issue_product_replacement(name)
-                        st.session_state.product_action_feedback[action_key_base] = {
-                            "type": "replacement",
-                            "result": result
-                        }
-                        st.rerun()
-
-                feedback = st.session_state.product_action_feedback.get(action_key_base)
-
-                if feedback:
-                    result = feedback.get("result", {})
-                    action_type = feedback.get("type")
-
-                    if action_type == "eligibility":
-                        eligible = result.get("eligible", False)
-                        reason = result.get("reason", "No reason returned.")
-                        if eligible:
-                            st.success(f"Eligibility verified: Eligible. {reason}")
-                        else:
-                            st.warning(f"Eligibility verified: Not eligible. {reason}")
-
-                    elif action_type == "refund":
-                        if result.get("success"):
-                            st.success(result.get("message", f"Refund issued for {name}."))
-                        else:
-                            st.error(result.get("error", "Refund action failed."))
-
-                    elif action_type == "replacement":
-                        if result.get("success"):
-                            st.success(result.get("message", f"Replacement issued for {name}."))
-                        else:
-                            st.error(result.get("error", "Replacement action failed."))
-
-                st.markdown("</div>", unsafe_allow_html=True)
+                        st.error(f"Error: {result.get('error')}")
