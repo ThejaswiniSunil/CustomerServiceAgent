@@ -49,42 +49,6 @@ html, body, [data-testid="stAppViewContainer"] {
   color: #f5f9ff !important;
   font-size: .85rem !important;
 }
-/* ── CHAT QUICK ACTIONS ── */
-.rx-quick-actions {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-div.st-key-mini_reset_btn button,
-div.st-key-mini_tracker_btn button,
-div.st-key-mini_learning_btn button,
-div.st-key-mini_refresh_btn button {
-  height: 30px !important;
-  min-height: 30px !important;
-  padding: 0 8px !important;
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  border-radius: 999px !important;
-  white-space: nowrap !important;
-  line-height: 1 !important;
-}
-
-div.st-key-google_send_icon button {
-  width: 42px !important;
-  height: 42px !important;
-  min-height: 42px !important;
-  border-radius: 999px !important;
-  padding: 0 !important;
-  font-size: 18px !important;
-}
-
-div.st-key-google_style_chat_input input {
-  height: 42px !important;
-  border-radius: 999px !important;
-  padding-left: 14px !important;
-  padding-right: 14px !important;
-}
 [data-testid="stSidebar"] .stSelectbox > div > div {
   background: #0f1728 !important;
   border: 1px solid rgba(255,255,255,.08) !important;
@@ -156,18 +120,15 @@ div.st-key-rx_chat_fab button:hover {
   filter: brightness(1.04) !important;
 }
 
-/* ── CHAT PANEL CONTAINER ── */
 div.st-key-rx_chat_panel {
   position: fixed !important;
   right: 24px !important;
-  bottom: 118px !important;
-  width: 390px !important;
-  max-width: calc(100vw - 40px) !important;
+  bottom: 110px !important;
+  width: 380px !important;
+  height: 580px !important;
   z-index: 9999 !important;
+  pointer-events: none;
 }
-
-/* Force all Streamlit wrapper divs inside the panel to be transparent
-   so only our .rx-chat-shell controls the look */
 div.st-key-rx_chat_panel > div,
 div.st-key-rx_chat_panel [data-testid="stVerticalBlock"],
 div.st-key-rx_chat_panel [data-testid="stVerticalBlockBorderWrapper"],
@@ -178,19 +139,24 @@ div.st-key-rx_chat_panel section {
   box-shadow: none !important;
   padding: 0 !important;
   margin: 0 !important;
+  pointer-events: auto;
 }
 
-/* ── THE ACTUAL CHAT SHELL — fully opaque, no bleed-through ── */
 .rx-chat-shell {
-  background: #0d1628;                        /* solid dark navy, zero transparency */
+  background: #0d1628;
   border: 1px solid rgba(93,133,255,.22);
   border-radius: 22px;
-  box-shadow:
-    0 24px 60px rgba(0,0,0,.70),             /* deep drop shadow */
-    0 0 0 1px rgba(255,255,255,.04) inset,   /* subtle inner border */
-    0 0 40px rgba(93,133,255,.12);           /* blue glow */
+  box-shadow: 0 24px 60px rgba(0,0,0,.70);
   overflow: hidden;
-  isolation: isolate;                         /* create new stacking context */
+  isolation: isolate;
+  width: 380px;
+  height: 580px;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  right: 24px;
+  bottom: 110px;
+  z-index: 9999;
 }
 
 .rx-chat-header {
@@ -213,25 +179,33 @@ div.st-key-rx_chat_panel section {
   background: #9dff8a;
   box-shadow: 0 0 12px #9dff8a;
 }
+div[data-testid="stForm"] {
+  visibility: hidden !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  position: absolute !important;
+  pointer-events: none !important;
+}
 .rx-chat-header-title {
   color: #f5f9ff;
   font-size: .92rem;
   font-weight: 800;
 }
-
-/* messages area — solid background */
 .rx-chat-messages {
   padding: 14px;
-  max-height: 340px;
-  overflow-y: auto;
-  background: #080f1c;                        /* solid, not semi-transparent */
+  flex: 1;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  background: #080f1c;
+  min-height: 0;
 }
 
-/* form area — solid background */
+
 .rx-chat-form {
   padding: 14px;
   border-top: 1px solid rgba(255,255,255,.07);
-  background: #0d1628;                        /* solid */
+  background: #0d1628;
+  flex-shrink: 0;
 }
 
 .rx-chat-sample-note {
@@ -955,8 +929,9 @@ def do_submit_complaint(complaint_text, complaints, pending):
     set_status("decision", "pending", "Waiting for resolution selection.")
     set_status("database", "pending", "Waiting for case log.")
     set_status("customer", "pending", "Waiting for final response.")
+    with st.spinner("ResolveX is processing your complaint..."):
+        ok, body = api_post("/complaint", {"complaint": complaint_text})
 
-    ok, body = api_post("/complaint", {"complaint": complaint_text})
 
     if not (ok and body.get("success")):
         set_status("listener", "error", "Complaint submission failed.")
@@ -1092,237 +1067,150 @@ st.markdown("""
 st.caption(f"Last updated: {datetime.now().strftime('%B %d, %Y  %H:%M:%S')}")
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# ── FLOATING CHAT BUTTON ─────────────────────────────────────
-if st.button("Chat", key="rx_chat_fab"):
-    st.session_state.chat_open = not st.session_state.chat_open
+# ── FLOATING CHAT BUTTON ─────────────────────────────────────────────────────
 
-# ── CHAT POPUP PANEL ────────────────────────────────────────
+fab_wrap = st.container(key="rx_chat_fab")
+with fab_wrap:
+    if st.button("", key="rx_chat_fab_btn"):
+        st.session_state.chat_open = not st.session_state.chat_open
+        st.rerun()
+
+# ── FLOATING CHAT PANEL ──────────────────────────────────────────────────────
 if st.session_state.chat_open:
-    with st.container(key="rx_chat_panel"):
+    samples = [
+        "My Voltix Charger overheats after five minutes and stopped working. Order ORD001.",
+        "I received the wrong AeroBuds Pro color and the box was already damaged. Order ORD003.",
+        "The Nova Blender has a broken motor and makes a burning smell after two uses. Order ORD002.",
+        "My headphones stopped charging after only 2 weeks. Very frustrated. Order ORD003.",
+    ]
+    sample_opts = "".join(f'<option value="{s}">{s[:55]}...</option>' for s in samples)
+    chat_body = render_chat_html()
 
-        st.markdown("""
-        <div class="rx-chat-shell">
-            <div class="rx-chat-header">
-                <div class="rx-chat-header-left">
-                    <div class="rx-chat-header-dot"></div>
-                    <div class="rx-chat-header-title">ResolveX Assistant</div>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="rx-chat-shell">
+      <div class="rx-chat-header">
+        <div class="rx-chat-header-left">
+          <div class="rx-chat-header-dot"></div>
+          <div class="rx-chat-header-title">ResolveX Assistant</div>
+        </div>
+      </div>
+      <div class="rx-chat-messages" id="rx-msgs">{chat_body}</div>
+      <div class="rx-chat-form">
+        <div class="rx-chat-sample-note">Quick samples</div>
+        <select id="rx-sample"
+          onchange="document.getElementById('rx-input').value=this.value"
+          style="width:100%;background:#0f1728;border:1px solid rgba(255,255,255,.08);
+                 border-radius:12px;color:#f5f9ff;padding:8px 10px;font-size:.82rem;
+                 margin-bottom:8px;box-sizing:border-box;">
+          <option value="">Custom...</option>
+          {sample_opts}
+        </select>
+        <textarea id="rx-input" rows="3" placeholder="Describe your issue here..."
+          style="width:100%;background:#0f1728;border:1px solid rgba(255,255,255,.08);
+                 border-radius:12px;color:#f5f9ff;padding:10px;font-size:.84rem;
+                 resize:none;box-sizing:border-box;font-family:inherit;margin-bottom:8px;"></textarea>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+          <button onclick="rxSubmit()"
+            style="background:linear-gradient(135deg,#5d85ff,#7ca4ff);color:white;border:none;
+                   border-radius:12px;padding:10px;font-weight:800;cursor:pointer;font-size:.84rem;">Send</button>
+          <button onclick="rxAction('reset')"
+            style="background:rgba(34,48,79,.95);color:white;border:1px solid rgba(127,177,255,.16);
+                   border-radius:12px;padding:10px;font-weight:800;cursor:pointer;font-size:.84rem;">Reset</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+          <button onclick="rxAction('tracker')"
+            style="background:rgba(34,48,79,.95);color:white;border:1px solid rgba(127,177,255,.16);
+                   border-radius:12px;padding:10px;font-weight:800;cursor:pointer;font-size:.84rem;">Tracker</button>
+          <button onclick="rxAction('learning')"
+            style="background:rgba(34,48,79,.95);color:white;border:1px solid rgba(127,177,255,.16);
+                   border-radius:12px;padding:10px;font-weight:800;cursor:pointer;font-size:.84rem;">Learning</button>
+        </div>
+        <button onclick="rxAction('refresh')"
+          style="width:100%;background:rgba(34,48,79,.95);color:white;
+                 border:1px solid rgba(127,177,255,.16);border-radius:12px;padding:10px;
+                 font-weight:800;cursor:pointer;font-size:.84rem;box-sizing:border-box;
+                 margin-bottom:8px;">🔄 Refresh Data</button>
+        <div style="padding:10px 12px;border-radius:14px;
+                    border:1px solid rgba(108,140,220,.14);background:#0d1e35;
+                    font-size:.76rem;color:#93a6c8;line-height:1.5;">
+          Multi-agent complaint understanding, decisioning, escalation, follow-up tracking, calendar and task board.
+        </div>
+      </div>
+    </div>
+    <script>
+      var m=document.getElementById("rx-msgs");
+      if(m) m.scrollTop=m.scrollHeight;
 
-        # ── CHAT MESSAGES ──
-        st.markdown('<div class="rx-chat-messages">', unsafe_allow_html=True)
+      function rxSubmit(){{
+        var txt=document.getElementById("rx-input").value.trim();
+        if(txt.length<10){{alert("Please enter at least 10 characters.");return;}}
+        var url=new URL(window.parent.location.href);
+        url.searchParams.set("rx_action","submit");
+        url.searchParams.set("rx_msg", encodeURIComponent(txt));
+        window.parent.location.href=url.toString();
+      }}
 
-        for msg in st.session_state.chat_messages:
-            if msg["type"] == "user":
-                st.markdown(
-                    f'<div class="chat-msg-user">{msg["text"]}</div>',
-                    unsafe_allow_html=True
-                )
-            elif msg["type"] == "bot":
-                st.markdown(
-                    f'<div class="chat-msg-bot">{msg["text"]}</div>',
-                    unsafe_allow_html=True
-                )
-            else:
-                st.markdown(
-                    f'<div class="chat-msg-sys">{msg["text"]}</div>',
-                    unsafe_allow_html=True
-                )
+      function rxAction(action){{
+        var url=new URL(window.parent.location.href);
+        url.searchParams.set("rx_action", action);
+        window.parent.location.href=url.toString();
+      }}
+    </script>
+    """, unsafe_allow_html=True)
 
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Handle URL action params
+    params = st.query_params
+    rx_action = params.get("rx_action", "")
+    rx_msg = params.get("rx_msg", "")
 
-        # ── INPUT / SAMPLE / ACTION SECTION ──
-        st.markdown('<div class="rx-chat-form">', unsafe_allow_html=True)
+    if rx_action:
+        st.query_params.clear()
 
-        st.markdown("""
-        <div class="rx-chat-sample-note">Quick Samples</div>
-        """, unsafe_allow_html=True)
-
-        # sample buttons
-        s1, s2 = st.columns(2, gap="small")
-        with s1:
-            sample_phone = st.button(
-                "Phone Issue",
-                key="sample_phone_btn",
-                use_container_width=True
-            )
-        with s2:
-            sample_delivery = st.button(
-                "Delivery Delay",
-                key="sample_delivery_btn",
-                use_container_width=True
-            )
-
-        # quick action buttons
-        b1, b2, b3, b4 = st.columns(4, gap="small")
-        with b1:
-            reset_clicked = st.button(
-                "Reset",
-                key="mini_reset_btn",
-                use_container_width=True
-            )
-        with b2:
-            tracker_clicked = st.button(
-                "Track",
-                key="mini_tracker_btn",
-                use_container_width=True
-            )
-        with b3:
-            learning_clicked = st.button(
-                "Learn",
-                key="mini_learning_btn",
-                use_container_width=True
-            )
-        with b4:
-            refresh_clicked = st.button(
-                "Refresh",
-                key="mini_refresh_btn",
-                use_container_width=True
-            )
-
-        # message input row
-        input_col, send_col = st.columns([9, 1], gap="small")
-
-        with input_col:
-            complaint_input = st.text_input(
-                "",
-                placeholder="Enter message...",
-                key="google_style_chat_input",
-                label_visibility="collapsed"
-            )
-
-        with send_col:
-            send_clicked = st.button(
-                "➤",
-                key="google_send_icon",
-                use_container_width=True
-            )
-
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # ── SAMPLE ACTIONS ──
-        if sample_phone:
-            sample_text = (
-                "Product: Samsung Galaxy S21\n"
-                "Order ID: 010\n"
-                "Issue: The phone suddenly stopped working and does not turn on "
-                "even after charging for several hours. The screen remains black "
-                "and the device is completely unresponsive."
-            )
-
-            st.session_state.chat_messages.append({
-                "type": "user",
-                "text": sample_text
-            })
-            st.session_state.chat_messages.append({
-                "type": "bot",
-                "text": "Sample complaint loaded. Processing now."
-            })
-
-            do_submit_complaint(sample_text, complaints, pending)
+        if rx_action == "submit" and rx_msg:
+            complaint_text = rx_msg.strip()
+            if len(complaint_text) >= 10:
+                with st.spinner("Processing your complaint..."):
+                    do_submit_complaint(complaint_text, complaints, pending)
             st.rerun()
 
-        if sample_delivery:
-            sample_text = (
-                "Product: Samsung Galaxy Buds\n"
-                "Order ID: 011\n"
-                "Issue: The delivery has been delayed for more than 7 days and "
-                "the tracking status has not changed."
-            )
-
-            st.session_state.chat_messages.append({
-                "type": "user",
-                "text": sample_text
-            })
-            st.session_state.chat_messages.append({
-                "type": "bot",
-                "text": "Delivery delay sample loaded. Processing now."
-            })
-
-            do_submit_complaint(sample_text, complaints, pending)
+        elif rx_action == "reset":
+            reset_session()
             st.rerun()
 
-        # ── SEND ACTION ──
-        if send_clicked:
-            if complaint_input.strip():
-                st.session_state.chat_messages.append({
-                    "type": "user",
-                    "text": complaint_input
-                })
-
-                st.session_state.chat_messages.append({
-                    "type": "bot",
-                    "text": "Complaint received. ResolveX is processing your request."
-                })
-
-                do_submit_complaint(
-                    complaint_input.strip(),
-                    complaints,
-                    pending
-                )
-
-                st.rerun()
-
-        # ── RESET ACTION ──
-        if reset_clicked:
-            st.session_state.chat_messages = [
-                {"type": "sys", "text": "ResolveX chat reset."},
-                {"type": "bot", "text": "Hi! Tell me what happened with your order and I'll help you through it."}
-            ]
-            st.rerun()
-
-        # ── TRACKER ACTION ──
-        if tracker_clicked:
-            prod = st.session_state.get("last_product")
+        elif rx_action == "tracker":
+            prod = st.session_state.last_product
             if prod:
-                push_trace(f"Running tracker for {prod}", "RUN")
-                push_activity(f"Tracker started for {prod}")
-                set_status("tracker", "running", f"Running tracker for {prod}...")
-                ok, res = api_post("/tracker/run", {"product_name": prod})
+                with st.spinner(f"Tracking {prod}..."):
+                    ok, res = api_post("/tracker/run", {"product_name": prod})
                 if ok and res.get("success"):
                     set_status("tracker", "done", "Tracker executed successfully.")
                     set_tool("tracker", json.dumps(res.get("result", {}), indent=2)[:500])
-                    st.session_state.chat_messages.append({
-                        "type": "bot",
-                        "text": f"Tracker completed for {prod}."
-                    })
+                    append_chat("sys", f"Tracker ran for {prod}.")
+                    push_trace(f"Tracker completed for {prod}", "OK")
                 else:
                     set_status("tracker", "error", "Tracker failed.")
-                    st.session_state.chat_messages.append({
-                        "type": "bot",
-                        "text": "Tracker failed to run."
-                    })
+                    push_trace(f"Tracker failed for {prod}", "ERR")
+                st.cache_data.clear()
             else:
-                st.session_state.chat_messages.append({
-                    "type": "bot",
-                    "text": "No product found yet. Submit a complaint first."
-                })
+                append_chat("sys", "Submit a complaint first so the tracker knows which product to follow.")
             st.rerun()
 
-        # ── LEARNING ACTION ──
-        if learning_clicked:
-            ok, res = api_post("/learning/run", {})
-            if ok:
-                st.session_state.chat_messages.append({
-                    "type": "bot",
-                    "text": "Learning agent triggered successfully."
-                })
+        elif rx_action == "learning":
+            with st.spinner("Running learning agent..."):
+                ok, res = api_post("/learning/run", {})
+            if ok and res.get("success"):
+                append_chat("sys", "Learning agent finished successfully.")
+                push_trace("Learning agent completed", "OK")
             else:
-                st.session_state.chat_messages.append({
-                    "type": "bot",
-                    "text": "Learning agent could not be started."
-                })
+                append_chat("sys", "Learning endpoint unavailable or failed.")
+                push_trace("Learning endpoint unavailable", "ERR")
             st.rerun()
 
-        # ── REFRESH ACTION ──
-        if refresh_clicked:
-            fetch_dashboard.clear()
-            fetch_complaints.clear()
-            fetch_products.clear()
-            fetch_pending.clear()
+        elif rx_action == "refresh":
+            st.cache_data.clear()
+            push_activity("Dashboard refreshed")
             st.rerun()
+            
 # ════════════════════════════════════════════════════════════════════════════
 # PAGE: OVERVIEW
 # ════════════════════════════════════════════════════════════════════════════
