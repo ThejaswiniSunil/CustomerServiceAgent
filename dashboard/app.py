@@ -1,3 +1,21 @@
+"""
+dashboard/app.py  ·  ResolveX Command Center  ·  v17.0.0
+─────────────────────────────────────────────────────────
+Full feature parity with the FastAPI HTML dashboard:
+  • Sidebar chat widget (always visible)
+  • AI Thought Trace panel
+  • Live Activity Feed
+  • Monthly Calendar with ETA pills
+  • Kanban / Task Board (4 columns)
+  • Notes + Tasks + Manufacturer + Tracker operational panels
+  • Donut SVG chart
+  • 6 KPI cards incl. SLA Overdue
+  • Resolution bars + Issue donut
+  • Deep dark theme matching the original design
+
+Run:
+    streamlit run dashboard/app.py
+"""
 
 import os, sys, math, json, calendar as cal_mod
 from datetime import datetime, timedelta
@@ -71,159 +89,6 @@ html, body, [data-testid="stAppViewContainer"] {
 }
 [data-testid="stMetricLabel"] { color: #93a6c8 !important; font-size: .82rem !important; font-weight: 600 !important; }
 
-/* ── FAB BUTTON ── */
-div.st-key-rx_chat_fab {
-  position: fixed !important;
-  right: 20px !important;
-  bottom: 28px !important;
-  z-index: 10000 !important;
-  width: 76px !important;
-  height: 76px !important;
-}
-div.st-key-rx_chat_fab > div,
-div.st-key-rx_chat_fab [data-testid="stVerticalBlock"] {
-  background: transparent !important;
-}
-div.st-key-rx_chat_fab button {
-  width: 76px !important;
-  height: 76px !important;
-  min-height: 76px !important;
-  border-radius: 999px !important;
-  padding: 0 !important;
-  font-size: 0 !important;
-  color: transparent !important;
-  text-indent: -9999px !important;
-  overflow: hidden !important;
-  line-height: 0 !important;
-  background: linear-gradient(135deg,#6f93ff,#6d97ff) !important;
-  box-shadow: 0 12px 42px rgba(93,133,255,.40), 0 0 34px rgba(93,133,255,.20) !important;
-  position: relative !important;
-  border: none !important;
-}
-div.st-key-rx_chat_fab button::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 30px;
-  height: 30px;
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
-  background-image: url("data:image/svg+xml;utf8,\
-<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'>\
-<path d='M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'/>\
-</svg>");
-}
-div.st-key-rx_chat_fab button:hover {
-  transform: scale(1.04);
-  filter: brightness(1.04) !important;
-}
-
-/* ── CHAT PANEL CONTAINER ── */
-div.st-key-rx_chat_panel {
-  position: fixed !important;
-  right: 24px !important;
-  bottom: 118px !important;
-  width: 390px !important;
-  max-width: calc(100vw - 40px) !important;
-  z-index: 9999 !important;
-}
-/* Force all Streamlit wrapper divs inside the panel to be transparent
-   so only our .rx-chat-shell controls the look */
-div.st-key-rx_chat_panel > div,
-div.st-key-rx_chat_panel [data-testid="stVerticalBlock"],
-div.st-key-rx_chat_panel [data-testid="stVerticalBlockBorderWrapper"],
-div.st-key-rx_chat_panel .element-container,
-div.st-key-rx_chat_panel section {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-}
-
-/* ── THE ACTUAL CHAT SHELL — fully opaque, no bleed-through ── */
-.rx-chat-shell {
-  background: #0d1628;                        /* solid dark navy, zero transparency */
-  border: 1px solid rgba(93,133,255,.22);
-  border-radius: 22px;
-  box-shadow:
-    0 24px 60px rgba(0,0,0,.70),             /* deep drop shadow */
-    0 0 0 1px rgba(255,255,255,.04) inset,   /* subtle inner border */
-    0 0 40px rgba(93,133,255,.12);           /* blue glow */
-  overflow: hidden;
-  isolation: isolate;                         /* create new stacking context */
-}
-
-.rx-chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid rgba(255,255,255,.07);
-  background: #111e35;                        /* solid, not rgba */
-}
-.rx-chat-header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.rx-chat-header-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: #9dff8a;
-  box-shadow: 0 0 12px #9dff8a;
-}
-.rx-chat-header-title {
-  color: #f5f9ff;
-  font-size: .92rem;
-  font-weight: 800;
-}
-
-/* messages area — solid background */
-.rx-chat-messages {
-  padding: 14px;
-  max-height: 340px;
-  overflow-y: auto;
-  background: #080f1c;                        /* solid, not semi-transparent */
-}
-
-/* form area — solid background */
-.rx-chat-form {
-  padding: 14px;
-  border-top: 1px solid rgba(255,255,255,.07);
-  background: #0d1628;                        /* solid */
-}
-
-.rx-chat-sample-note {
-  color: #8fa3c7;
-  font-size: .75rem;
-  font-weight: 700;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-}
-
-/* ── CLOSE BUTTON ── */
-div.st-key-rx_chat_close button {
-  width: 38px !important;
-  height: 38px !important;
-  min-height: 38px !important;
-  border-radius: 999px !important;
-  padding: 0 !important;
-  border: 1px solid rgba(255,255,255,.10) !important;
-  background: #1a2740 !important;            /* solid */
-  color: white !important;
-  font-size: 16px !important;
-  box-shadow: none !important;
-}
-div.st-key-rx_chat_close button:hover {
-  background: #243451 !important;
-}
-
-/* ── GLOBAL BUTTONS ── */
 .stButton > button {
   background: linear-gradient(135deg,#5d85ff,#7ca4ff) !important;
   color: white !important; border: none !important;
@@ -237,7 +102,6 @@ div.st-key-rx_chat_close button:hover {
   border: 1px solid rgba(127,177,255,.16) !important;
 }
 
-/* ── EXPANDERS ── */
 .streamlit-expanderHeader {
   background: rgba(17,26,45,.95) !important;
   border: 1px solid rgba(255,255,255,.07) !important;
@@ -250,7 +114,6 @@ div.st-key-rx_chat_close button:hover {
   border-top: none !important; border-radius: 0 0 14px 14px !important;
 }
 
-/* ── INPUTS ── */
 .stSelectbox > div > div, .stTextInput > div > div > input {
   background: #0f1728 !important;
   border: 1px solid rgba(255,255,255,.08) !important;
@@ -262,7 +125,6 @@ div.st-key-rx_chat_close button:hover {
   border-radius: 12px !important; color: #f5f9ff !important;
 }
 
-/* ── ALERTS ── */
 .stSuccess { background: rgba(79,255,176,.07) !important; border: 1px solid rgba(79,255,176,.2) !important; border-radius: 12px !important; }
 .stError   { background: rgba(255,107,125,.07) !important; border: 1px solid rgba(255,107,125,.2) !important; border-radius: 12px !important; }
 .stInfo    { background: rgba(85,230,255,.07)  !important; border: 1px solid rgba(85,230,255,.2)  !important; border-radius: 12px !important; }
@@ -272,11 +134,14 @@ div.st-key-rx_chat_close button:hover {
   border: 1px solid rgba(255,255,255,.06) !important;
   border-radius: 14px !important; overflow: hidden !important;
 }
+/* sidebar navigation icons */
+[data-testid="stSidebar"] .stRadio > label {
+  display: none;
+}
 
-hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; }
-
-[data-testid="stSidebar"] .stRadio > label { display: none; }
-[data-testid="stSidebar"] .stRadio div[role="radiogroup"] { gap: 4px !important; }
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] {
+  gap: 4px !important;
+}
 
 [data-testid="stSidebar"] div[role="radiogroup"] > label {
   display: flex !important;
@@ -289,20 +154,17 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
   border: 1px solid transparent !important;
   color: #d6e3fa !important;
   font-weight: 700 !important;
-  transition: .15s ease !important;
 }
+
 [data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
   background: rgba(255,255,255,.05) !important;
   border-color: rgba(255,255,255,.08) !important;
 }
-[data-testid="stSidebar"] div[role="radiogroup"] > label[data-selected="true"] {
-  background: rgba(255,255,255,.08) !important;
-  border-color: rgba(255,255,255,.12) !important;
-  box-shadow: 0 0 18px rgba(157,255,138,.12);
-}
+
 [data-testid="stSidebar"] div[role="radiogroup"] input[type="radio"] {
   display: none !important;
 }
+
 [data-testid="stSidebar"] div[role="radiogroup"] > label p::before {
   content: "";
   display: inline-block;
@@ -315,6 +177,8 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
   background-size: contain;
   opacity: .9;
 }
+
+/* Overview */
 [data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(1) p::before {
   background-image: url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bed3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>\
@@ -322,13 +186,17 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
 <path d='M5 9.5V21h14V9.5'/>\
 </svg>");
 }
+
+/* Operations */
 [data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(2) p::before {
   background-image: url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bed3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>\
 <circle cx='12' cy='12' r='3'/>\
-<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.33 1V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-.33-1 1.65 1.65 0 0 0-1-.6 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 0-1-.33H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1-.33 1.65 1.65 0 0 0 .6-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 0 .33-1V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 .33 1 1.65 1.65 0 0 0 1 .6 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.24.3.44.64.6 1 .16.36.24.74.24 1.12s-.08.76-.24 1.12c-.16.36-.36.7-.6 1z'/>\
+<path d='M19 12h2M3 12h2M12 3v2M12 19v2M17 17l1.5 1.5M5.5 5.5 7 7M17 7l1.5-1.5M5.5 18.5 7 17'/>\
 </svg>");
 }
+
+/* Complaints */
 [data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(3) p::before {
   background-image: url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bed3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>\
@@ -338,6 +206,8 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
 <path d='M14 3v5h5'/>\
 </svg>");
 }
+
+/* Products */
 [data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(4) p::before {
   background-image: url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bed3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>\
@@ -346,6 +216,10 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
 <path d='M12 22V12'/>\
 </svg>");
 }
+hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; }
+
+[data-testid="stSidebar"] .stRadio > label { display: none; }
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] { gap: 4px !important; }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: rgba(255,255,255,.03); }
@@ -354,7 +228,6 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
 #MainMenu, footer, header { visibility: hidden; }
 [data-testid="stToolbar"] { display: none; }
 
-/* ── CARD ── */
 .rx-card {
   background: linear-gradient(180deg,rgba(18,27,45,.97),rgba(12,19,33,.97));
   border: 1px solid rgba(120,150,230,.14);
@@ -370,7 +243,6 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
 .rx-card-title { font-size:1rem;font-weight:800;color:#f5f9ff;letter-spacing:-.02em;margin-bottom:4px; }
 .rx-card-desc  { font-size:.8rem;color:#93a6c8;line-height:1.45;margin-bottom:12px; }
 
-/* ── TRACE / FEED / STATUS / TOOLS ── */
 .trace-line {
   display:flex; justify-content:space-between; align-items:center;
   padding:10px 12px; border-radius:12px;
@@ -419,7 +291,6 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
   padding:5px 12px; font-size:.75rem; color:#dce7f7; margin:3px;
 }
 
-/* ── CALENDAR ── */
 .cal-grid { display:grid;grid-template-columns:repeat(7,1fr);gap:8px; }
 .cal-day-name { text-align:center;font-size:.72rem;color:#93a6c8;font-weight:700;padding-bottom:6px; }
 .cal-cell {
@@ -438,7 +309,6 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
   display:block;margin-top:3px;
 }
 
-/* ── KANBAN ── */
 .kanban-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:10px; }
 .kan-col {
   border-radius:16px; border:1px solid rgba(255,255,255,.05);
@@ -452,7 +322,6 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
 .task-title { font-size:.8rem;font-weight:800;color:#f5f9ff;margin-bottom:3px; }
 .task-sub   { font-size:.72rem;color:#93a6c8;line-height:1.4; }
 
-/* ── CHAT MESSAGES ── */
 .chat-msg-user {
   background: linear-gradient(135deg,#5d85ff,#7ca4ff);
   color: white; border-radius: 14px; padding: 10px 14px;
@@ -460,19 +329,18 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
   max-width: 90%; margin-left: auto; text-align: right;
 }
 .chat-msg-bot {
-  background: #162035;                        /* solid instead of rgba */
+  background: rgba(17,26,45,.95);
   border: 1px solid rgba(255,255,255,.07);
   color: #dbe7f7; border-radius: 14px; padding: 10px 14px;
   font-size: .86rem; line-height: 1.5; margin-bottom: 8px;
 }
 .chat-msg-sys {
-  background: #0d2028;                        /* solid */
+  background: rgba(85,230,255,.07);
   border: 1px solid rgba(85,230,255,.14);
   color: #9ecfdf; border-radius: 14px; padding: 8px 12px;
   font-size: .78rem; font-style: italic; margin-bottom: 8px;
 }
 
-/* ── BARS ── */
 .bar-row { display:grid;grid-template-columns:130px 1fr 40px;gap:10px;align-items:center;margin-bottom:10px; }
 .bar-label { font-size:.84rem;color:#d9e6f7; }
 .bar-track { height:14px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);overflow:hidden; }
@@ -484,7 +352,6 @@ hr { border-color: rgba(255,255,255,.07) !important; margin: 1rem 0 !important; 
   text-transform:uppercase;letter-spacing:.14em;padding:0 4px;margin-top:8px;
 }
 
-/* ── PRODUCT CARDS ── */
 .product-card {
   border-radius:16px;border:1px solid rgba(255,255,255,.06);
   background:rgba(15,23,40,.86);padding:16px;margin-bottom:12px;
@@ -535,8 +402,6 @@ def _init_state():
         "last_complaint_id": None,
         "statuses":          _default_statuses(),
         "tool_panels":       _default_tools(),
-        "chat_open":         False,
-        "sample_choice":     "Custom...",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -613,18 +478,26 @@ def set_tool(key, body, badge="Connected"):
 def append_chat(msg_type, text):
     st.session_state.chat_messages.append({"type": msg_type, "text": text})
 
+
 def reset_session():
     for k in [
-        "chat_messages", "trace_items", "activity_items", "last_product",
-        "last_complaint_id", "statuses", "tool_panels",
-        "chat_open", "sample_choice"
+        "chat_messages",
+        "trace_items",
+        "activity_items",
+        "last_product",
+        "last_complaint_id",
+        "statuses",
+        "tool_panels",
+        "sidebar_sample",
+        "complaint_input_sidebar",
+        "sample_select",
+        "clear_sidebar_input",
     ]:
         if k in st.session_state:
             del st.session_state[k]
     _init_state()
-    for key in ["chat_input_box", "chat_sample_select"]:
-        if key in st.session_state:
-            del st.session_state[key]
+
+
 
 # ── Derived data ─────────────────────────────────────────────────────────────
 
@@ -1014,8 +887,9 @@ def _is_overdue(c):
 overdue = sum(1 for c in complaints if _is_overdue(c))
 api_ok  = check_api()
 
-# ── SIDEBAR ──────────────────────────────────────────────────────────────────
 
+
+# ── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
     <div style="display:flex;align-items:center;gap:12px;padding:8px 0 16px;">
@@ -1031,16 +905,154 @@ with st.sidebar:
 
     color_api = "#4fffb0" if api_ok else "#ff6b7d"
     label_api = "API Connected" if api_ok else "API Disconnected"
-    st.markdown(f'<div style="font-weight:700;font-size:.85rem;color:{color_api};margin-bottom:4px;">● {label_api}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="font-weight:700;font-size:.85rem;color:{color_api};margin-bottom:4px;">● {label_api}</div>',
+        unsafe_allow_html=True
+    )
     st.caption(f"→ {API_BASE}")
 
     st.markdown('<div class="side-label" style="margin-top:14px;">Navigation</div>', unsafe_allow_html=True)
-    page = st.radio("nav", ["  Overview","  Operations","  Complaints","  Products"], label_visibility="collapsed")
+    page = st.radio(
+        "nav",
+        ["Overview", "Operations", "Complaints", "Products"],
+        label_visibility="collapsed"
+    )
 
     st.markdown('<hr style="margin:14px 0;">', unsafe_allow_html=True)
 
-# ── MAIN HEADER ──────────────────────────────────────────────────────────────
+    # ── CHAT WIDGET ──────────────────────────────────────────────────────
+    st.markdown("""
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <div style="width:8px;height:8px;border-radius:999px;background:#55e6ff;box-shadow:0 0 8px #55e6ff;"></div>
+      <span style="font-weight:800;font-size:.9rem;color:#f5f9ff;">ResolveX Assistant</span>
+    </div>
+    """, unsafe_allow_html=True)
 
+    chat_html = render_chat_html()
+    st.markdown(f"""
+    <div id="rx-msgs" style="height:220px;overflow-y:scroll;margin-bottom:10px;
+                background:rgba(6,10,18,.5);border-radius:14px;
+                border:1px solid rgba(255,255,255,.06);padding:10px;">
+      {chat_html}
+    </div>
+    <script>
+      var m=document.getElementById("rx-msgs");
+      if(m) m.scrollTop=m.scrollHeight;
+    </script>
+    """, unsafe_allow_html=True)
+
+    samples = [
+        "Custom...",
+        "My Voltix Charger overheats after five minutes and stopped working. Order ORD001.",
+        "I received the wrong AeroBuds Pro color and the box was already damaged. Order ORD003.",
+        "The Nova Blender has a broken motor and makes a burning smell after two uses. Order ORD002.",
+        "My headphones stopped charging after only 2 weeks. Very frustrated. Order ORD003.",
+    ]
+
+    if "sidebar_sample" not in st.session_state:
+        st.session_state.sidebar_sample = "Custom..."
+
+    if "complaint_input_sidebar" not in st.session_state:
+        st.session_state.complaint_input_sidebar = ""
+
+    if "clear_sidebar_input" not in st.session_state:
+        st.session_state.clear_sidebar_input = False
+
+    if st.session_state.clear_sidebar_input:
+        st.session_state.complaint_input_sidebar = ""
+        st.session_state.sidebar_sample = "Custom..."
+        st.session_state.clear_sidebar_input = False
+
+    selected = st.selectbox(
+        "Sample complaint",
+        samples,
+        index=samples.index(st.session_state.sidebar_sample),
+        label_visibility="collapsed",
+        key="sample_select"
+    )
+
+    if selected != st.session_state.sidebar_sample:
+        st.session_state.sidebar_sample = selected
+        if selected == "Custom...":
+            st.session_state.clear_sidebar_input = True
+        else:
+            st.session_state.complaint_input_sidebar = selected
+        st.rerun()
+
+    st.text_area(
+        "Complaint",
+        height=90,
+        placeholder="Describe your issue here...",
+        label_visibility="collapsed",
+        key="complaint_input_sidebar"
+    )
+
+    col_send, col_reset = st.columns(2)
+
+    with col_send:
+        if st.button("Send", use_container_width=True, key="send_btn"):
+            text = st.session_state.complaint_input_sidebar.strip()
+            if len(text) >= 10:
+                with st.spinner("Processing your complaint..."):
+                    do_submit_complaint(text, complaints, pending)
+                st.session_state.clear_sidebar_input = True
+                st.rerun()
+            else:
+                st.warning("Enter at least 10 characters.")
+
+    with col_reset:
+        if st.button("Reset", use_container_width=True, key="reset_btn"):
+            reset_session()
+            st.session_state.clear_sidebar_input = True
+            st.rerun()
+
+    col_trk, col_lrn = st.columns(2)
+
+    with col_trk:
+        if st.button("Tracker", use_container_width=True, key="tracker_btn"):
+            prod = st.session_state.last_product
+            if prod:
+                push_trace(f"Running tracker for {prod}", "RUN")
+                push_activity(f"Tracker started for {prod}")
+                set_status("tracker", "running", f"Running tracker for {prod}...")
+                with st.spinner(f"Tracking {prod}..."):
+                    ok, res = api_post("/tracker/run", {"product_name": prod})
+                if ok and res.get("success"):
+                    set_status("tracker", "done", "Tracker executed successfully.")
+                    set_tool("tracker", json.dumps(res.get("result", {}), indent=2)[:500])
+                    append_chat("sys", f"Tracker ran for {prod}.")
+                    push_trace(f"Tracker completed for {prod}", "OK")
+                else:
+                    set_status("tracker", "error", "Tracker failed.")
+                    push_trace(f"Tracker failed for {prod}", "ERR")
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                append_chat("sys", "Submit a complaint first so the tracker knows which product to follow.")
+                st.rerun()
+
+    with col_lrn:
+        if st.button("Learning", use_container_width=True, key="learning_btn"):
+            append_chat("sys", "Running learning agent...")
+            push_trace("Learning agent triggered", "RUN")
+            push_activity("Learning agent started")
+            with st.spinner("Running learning agent..."):
+                ok, res = api_post("/learning/run", {})
+            if ok and res.get("success"):
+                append_chat("sys", "Learning agent finished successfully.")
+                push_trace("Learning agent completed", "OK")
+            else:
+                append_chat("sys", "Learning endpoint unavailable or failed.")
+                push_trace("Learning endpoint unavailable", "ERR")
+            st.rerun()
+
+    st.markdown('<hr style="margin:12px 0;">', unsafe_allow_html=True)
+# ── MAIN HEADER ──────────────────────────────────────────────────────────────
+# ── MAIN HEADER ──────────────────────────────────────────────────────────────
+st.markdown("""
+<div style="margin-bottom:6px;">
+...
+""", unsafe_allow_html=True)
 st.markdown("""
 <div style="margin-bottom:6px;">
   <h1 style="margin:0;font-size:1.85rem;font-weight:800;letter-spacing:-.05em;color:#f5f9ff;">
@@ -1055,149 +1067,11 @@ st.markdown("""
 st.caption(f"Last updated: {datetime.now().strftime('%B %d, %Y  %H:%M:%S')}")
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# ── FLOATING CHAT BUTTON ─────────────────────────────────────────────────────
-
-fab_wrap = st.container(key="rx_chat_fab")
-with fab_wrap:
-    if st.button("", key="rx_chat_fab_btn"):
-        st.session_state.chat_open = not st.session_state.chat_open
-        st.rerun()
-
-# ── FLOATING CHAT PANEL ──────────────────────────────────────────────────────
-
-if st.session_state.chat_open:
-    panel = st.container(key="rx_chat_panel")
-    with panel:
-        # Single wrapping shell — fully opaque background
-        st.markdown('<div class="rx-chat-shell">', unsafe_allow_html=True)
-
-        # Header row
-        header_cols = st.columns([10, 1])
-        with header_cols[0]:
-            st.markdown("""
-            <div class="rx-chat-header">
-              <div class="rx-chat-header-left">
-                <div class="rx-chat-header-dot"></div>
-                <div class="rx-chat-header-title">ResolveX Assistant</div>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
-        with header_cols[1]:
-            close_wrap = st.container(key="rx_chat_close")
-            with close_wrap:
-                if st.button("✕", key="rx_chat_close_btn"):
-                    st.session_state.chat_open = False
-                    st.rerun()
-
-        # Messages
-        st.markdown(
-            f'<div class="rx-chat-messages">{render_chat_html()}</div>',
-            unsafe_allow_html=True
-        )
-
-        # Form area
-        st.markdown('<div class="rx-chat-form">', unsafe_allow_html=True)
-        st.markdown('<div class="rx-chat-sample-note">Quick samples</div>', unsafe_allow_html=True)
-
-        samples = [
-            "Custom...",
-            "My Voltix Charger overheats after five minutes and stopped working. Order ORD001.",
-            "I received the wrong AeroBuds Pro color and the box was already damaged. Order ORD003.",
-            "The Nova Blender has a broken motor and makes a burning smell after two uses. Order ORD002.",
-            "My headphones stopped charging after only 2 weeks. Very frustrated. Order ORD003.",
-        ]
-
-        sample_index = samples.index(st.session_state.sample_choice) if st.session_state.sample_choice in samples else 0
-        selected_sample = st.selectbox(
-            "Choose a sample",
-            samples,
-            index=sample_index,
-            key="chat_sample_select",
-            label_visibility="collapsed"
-        )
-        st.session_state.sample_choice = selected_sample
-        default_value = "" if selected_sample == "Custom..." else selected_sample
-
-        complaint_input = st.text_area(
-            "Complaint",
-            value=default_value,
-            height=90,
-            placeholder="Describe your issue here...",
-            label_visibility="collapsed",
-            key="chat_input_box"
-        )
-
-        col_send, col_reset = st.columns(2)
-        with col_send:
-            if st.button("Send", use_container_width=True, key="send_btn_floating"):
-                if complaint_input and len(complaint_input.strip()) >= 10:
-                    do_submit_complaint(complaint_input.strip(), complaints, pending)
-                    st.rerun()
-                else:
-                    st.warning("Enter at least 10 characters.")
-        with col_reset:
-            if st.button("Reset", use_container_width=True, key="reset_btn_floating"):
-                reset_session()
-                st.rerun()
-
-        col_trk, col_lrn = st.columns(2)
-        with col_trk:
-            if st.button("Tracker", use_container_width=True, key="tracker_btn_floating"):
-                prod = st.session_state.last_product
-                if prod:
-                    push_trace(f"Running tracker for {prod}", "RUN")
-                    push_activity(f"Tracker started for {prod}")
-                    set_status("tracker", "running", f"Running tracker for {prod}...")
-                    ok, res = api_post("/tracker/run", {"product_name": prod})
-                    if ok and res.get("success"):
-                        set_status("tracker", "done", "Tracker executed successfully.")
-                        set_tool("tracker", json.dumps(res.get("result", {}), indent=2)[:500])
-                        append_chat("sys", f"Tracker ran for {prod}.")
-                        push_trace(f"Tracker completed for {prod}", "OK")
-                    else:
-                        set_status("tracker", "error", "Tracker failed.")
-                        push_trace(f"Tracker failed for {prod}", "ERR")
-                    st.cache_data.clear()
-                    st.rerun()
-                else:
-                    append_chat("sys", "Submit a complaint first so the tracker knows which product to follow.")
-                    st.rerun()
-        with col_lrn:
-            if st.button("Learning", use_container_width=True, key="learning_btn_floating"):
-                append_chat("sys", "Running learning agent...")
-                push_trace("Learning agent triggered", "RUN")
-                push_activity("Learning agent started")
-                ok, res = api_post("/learning/run", {})
-                if ok and res.get("success"):
-                    append_chat("sys", "Learning agent finished successfully.")
-                    push_trace("Learning agent completed", "OK")
-                else:
-                    append_chat("sys", "Learning endpoint unavailable or failed.")
-                    push_trace("Learning endpoint unavailable", "ERR")
-                st.rerun()
-
-        if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_btn_floating"):
-            st.cache_data.clear()
-            push_activity("Dashboard refreshed")
-            st.rerun()
-
-        st.markdown("""
-        <div style="margin-top:8px;padding:12px;border-radius:14px;
-                    border:1px solid rgba(108,140,220,.14);
-                    background:#0d1e35;
-                    font-size:.76rem;color:#93a6c8;line-height:1.5;">
-          Multi-agent complaint understanding, decisioning, escalation, follow-up tracking, calendar and task board.
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown('</div>', unsafe_allow_html=True)  # close rx-chat-form
-        st.markdown('</div>', unsafe_allow_html=True)  # close rx-chat-shell
-
 # ════════════════════════════════════════════════════════════════════════════
 # PAGE: OVERVIEW
 # ════════════════════════════════════════════════════════════════════════════
 
-if page == "  Overview":
+if page == "Overview":
 
     c1,c2,c3,c4,c5,c6 = st.columns(6)
     c1.metric("Total Complaints",   total_c)
@@ -1233,7 +1107,7 @@ if page == "  Overview":
 # PAGE: OPERATIONS
 # ════════════════════════════════════════════════════════════════════════════
 
-elif page == "  Operations":
+elif page == "Operations":
 
     col_l, col_r = st.columns([1, 1.1])
     with col_l:
@@ -1295,7 +1169,7 @@ elif page == "  Operations":
 # PAGE: COMPLAINTS
 # ════════════════════════════════════════════════════════════════════════════
 
-elif page == "  Complaints":
+elif page == "Complaints":
 
     st.markdown('<div class="rx-card"><div class="rx-card-title">Complaints</div><div class="rx-card-desc">Filter complaints by product, issue, urgency, and resolution.</div></div>', unsafe_allow_html=True)
 
@@ -1343,7 +1217,7 @@ elif page == "  Complaints":
 # PAGE: PRODUCTS
 # ════════════════════════════════════════════════════════════════════════════
 
-elif page == "  Products":
+elif page == "Products":
 
     st.markdown('<div class="rx-card"><div class="rx-card-title">Products</div><div class="rx-card-desc">Product-level complaint and escalation monitoring.</div></div>', unsafe_allow_html=True)
 
@@ -1396,3 +1270,6 @@ elif page == "  Products":
                         st.cache_data.clear(); st.rerun()
                     else:
                         st.error(f"Error: {result.get('error')}")
+
+
+                        
