@@ -10,7 +10,7 @@ from vertexai.generative_models import GenerativeModel
 from dotenv import load_dotenv
 
 # MCP tool — calendar events
-from mcp.calendar_tool import create_event, complete_event, get_events_by_entity
+from CustomerServiceAgent.mcp.calendar_tool import create_event, complete_event, get_events_by_entity
 
 load_dotenv()
 
