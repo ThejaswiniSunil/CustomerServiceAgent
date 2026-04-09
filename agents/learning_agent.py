@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 # MCP tool — notes storage
 # Uses create_note() from mcp/notes_tool.py
-from mcp.notes_tool import create_note
+from CustomerServiceAgent.mcp.notes_tool import create_note  # ← was: save_note (does not exist)
 
 load_dotenv()
 
@@ -156,7 +156,7 @@ def improve() -> dict:
         logger.error(f"[learning_agent] Failed to save learning report: {e}")
 
     # Step 6 — MCP: save insights as a note via notes_tool.create_note()
-    # Uses exact signature: create_note(title, note_type, related_entity, related_id, body, author, tags, metadata)
+    # Signature: create_note(title, note_type, related_entity, related_id, body, author, tags, metadata)
     try:
         note_result = create_note(
             title=f"Learning report — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC",
