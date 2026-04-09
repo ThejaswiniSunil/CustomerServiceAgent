@@ -1,29 +1,17 @@
 import os
 import logging
 from typing import Any, Dict, List
-
 from google.cloud import firestore
 from dotenv import load_dotenv
-from .agents.listener_agent import listen
-from .agents.analyst_agent import check_eligibility
-from .agents.decision_agent import decide
-from .agents.database_agent import log_complaint, get_all_complaints, get_product_stats
-from .agents.insight_agent import analyze
-from .agents.manufacturer_agent import contact_manufacturer
-from .agents.tracker_agent import track_and_followup
-from .agents.learning_agent import improve
+from CustomerServiceAgent.agents.listener_agent import listen
+from CustomerServiceAgent.agents.analyst_agent import check_eligibility
+from CustomerServiceAgent.agents.decision_agent import decide
+from CustomerServiceAgent.agents.database_agent import log_complaint, get_all_complaints, get_product_stats
+from CustomerServiceAgent.agents.insight_agent import analyze
+from CustomerServiceAgent.agents.manufacturer_agent import contact_manufacturer
+from CustomerServiceAgent.agents.tracker_agent import track_and_followup
+from CustomerServiceAgent.agents.learning_agent import improve
 from .mcp.task_tool import create_task
-
-
-
-
-
-
-
-
-
-# MCP tool — task management
-from mcp.task_tool import create_task
 
 load_dotenv()
 
@@ -143,16 +131,21 @@ class ResolveXOrchestrator:
             try:
                 task = create_task(
                     title=f"Manual review required: {extracted_data.get('product_name', 'Unknown')}",
+                    task_type="manual_escalation",
+                    related_entity="complaint",
+                    related_id=str(result.get("complaint_id", "")),
+                    priority=decision.get("priority", "high"),
                     description=(
                         f"Complaint ID: {result.get('complaint_id')}\n"
                         f"Issue: {extracted_data.get('complaint_summary', '')}\n"
                         f"Reason: {decision.get('decision_reason', '')}"
                     ),
                     assigned_to="support_team",
-                    priority=decision.get("priority", "high"),
-                    product_name=extracted_data.get("product_name"),
-                    complaint_id=result.get("complaint_id"),
-                    due_in_days=int(decision.get("estimated_resolution_days", 3))
+                    metadata={
+                        "product_name": extracted_data.get("product_name"),
+                        "complaint_id": result.get("complaint_id"),
+                        "estimated_resolution_days": int(decision.get("estimated_resolution_days", 3)),
+                    }
                 )
                 result["steps"]["mcp_task"] = task
                 logger.info(f"[orchestrator] MCP task created: {task.get('task_id')}")
